@@ -76,7 +76,7 @@ async def main():
     if args.command == "parse":
         output_dir = str(Path(args.output_dir)) if args.output_dir else None
 
-        content_list = await processor.process_document_complete(
+        content_list = await processor.process_document(
             file_path=Path(args.file_path),
             output_dir=output_dir,
             parse_method=args.parse_method,

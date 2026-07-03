@@ -73,7 +73,7 @@ class BatchProcess:
     def success_rate(self) -> float:
         if self.total_files == 0:
             return 0.0
-        return (len(self.succesfull_files) / self.total_files) * 100
+        return (len(self.successful_files) / self.total_files) * 100
 
     def summary(self) -> str:
         return (
@@ -83,7 +83,6 @@ class BatchProcess:
             f"  Failed: {len(self.failed_files)}\n"
             f"  Processing time: {self.processing_time:.2f} seconds\n"
             f"  Output directory: {self.output_dir}\n"
-            f"  Dry run: {self.dry_run}"
         )
 
 
