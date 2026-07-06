@@ -29,6 +29,8 @@ def create_document_routes():
 
     @router.post("/bulk-ingestion")
     async def bulk_ingestion(body: IngestionRequest):
-        pass
+        return await processor.ingest_documents(
+            file_paths=[body.path], parse_method=body.parse_method
+        )
 
     return router

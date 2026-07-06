@@ -128,8 +128,9 @@ class TestBuildContextTokenBudget:
         chunks = [_make_chunk(text="short")]
         state = _make_state(chunks=chunks)
 
-        with patch("src.agents.agentic.synthesizer.config") as mock_config:
-            mock_config.MAX_CONTEXT_CHARS = 500
+        from src.agents.agentic.synthesizer import config
+
+        with patch.object(config, "MAX_CONTEXT_CHARS", 500):
             result = _build_context(state)
 
         assert len(result) <= 500

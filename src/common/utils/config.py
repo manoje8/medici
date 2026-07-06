@@ -50,6 +50,12 @@ class Config:
     MAX_RETRIEVAL_ROUND = int(os.getenv("MAX_RETRIEVAL_ROUND", 1))
     MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", 100_000))
 
+    # Token-budget guard
+    MODEL_CONTEXT_LIMIT: int = int(os.getenv("MODEL_CONTEXT_LIMIT", 128_000))
+    MAX_OUTPUT_TOKENS: int = int(os.getenv("MAX_OUTPUT_TOKENS", 2_048))
+    MAX_PROMPT_OVERHEAD_TOKENS: int = int(os.getenv("MAX_PROMPT_OVERHEAD_TOKENS", 1_024))
+    MAX_QUERY_INPUT_TOKENS: int = int(os.getenv("MAX_QUERY_INPUT_TOKENS", 512))
+
     CACHE_DIR = Path(".cache/doc_parser")
     CACHE_MANIFEST = CACHE_DIR / "manifest.json"
 

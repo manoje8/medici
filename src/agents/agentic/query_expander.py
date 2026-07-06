@@ -1,11 +1,14 @@
 import logfire
 
+from src.common.utils.query_utils import truncate_query
+
 
 class QueryExpander:
     def __init__(self, llm_client):
         self.llm = llm_client
 
     async def expand(self, query: str) -> list[str]:
+        query = truncate_query(query)
         prompt = f"""
         Generate 2 alternative phrasings of this search query.
         Each phrasing should use different vocabulary but seek the same information.

@@ -7,6 +7,7 @@ import logfire
 from src.agents.agent_model import AgentState
 from src.agents.graph.state import State
 from src.common.utils.config import config
+from src.common.utils.query_utils import get_tokenizer
 
 _NO_CONTEXT_MSG = (
     "I could not find sufficient information in the documents "
@@ -42,14 +43,26 @@ def _get(state: AgentState | dict, key: str, attr: str | None = None):
 
 
 def _build_context(state: AgentState | dict, max_chars: int | None = None) -> str:
-    """Build context string with token budget guard.
+    """Build context string with token-budget and character-budget guards.
 
-    Chunks are added in order until the character budget is reached.
-    Truncation is chunk-aware: the last chunk that would exceed the
-    budget is dropped entirely rather than being cut mid-text.
+    Strategy
+    --------
+    1. Sort ``accepted_chunks`` descending by ``relevance_score`` so the most
+       relevant evidence is always included first when the window is tight.
+    2. Count tokens (cl100k_base proxy) against the derived token budget:
+           token_budget = MODEL_CONTEXT_LIMIT
+                        - MAX_OUTPUT_TOKENS
+                        - MAX_PROMPT_OVERHEAD_TOKENS
+    3. Fall back to the existing ``MAX_CONTEXT_CHARS`` character guard as a
+       secondary safety net (whichever limit fires first wins).
+    4. Truncation is chunk-aware — the chunk that would overflow is dropped
+       entirely rather than being sliced mid-text.
     """
 
     max_chars = max_chars or config.MAX_CONTEXT_CHARS
+    token_budget = (
+        config.MODEL_CONTEXT_LIMIT - config.MAX_OUTPUT_TOKENS - config.MAX_PROMPT_OVERHEAD_TOKENS
+    )
 
     if isinstance(state, AgentState):
         context = state.all_retrieved_context
@@ -62,9 +75,17 @@ def _build_context(state: AgentState | dict, max_chars: int | None = None) -> st
 
     chunks = state.get("accepted_chunks") or []
 
-    parts: list[str] = []
-    current_len = 0
+    chunks = sorted(
+        chunks,
+        key=lambda c: float(c.get("relevance_score") or 0.0),
+        reverse=True,
+    )
+
+    tokenizer = get_tokenizer()
     separator = "\n\n---\n\n"
+    parts: list[str] = []
+    current_chars = 0
+    current_tokens = 0
 
     for c in chunks:
         part = (
@@ -72,16 +93,29 @@ def _build_context(state: AgentState | dict, max_chars: int | None = None) -> st
             f"Section: {c.get('section', 'unknown')}]\n"
             f"{c.get('text', '')}"
         )
-        addition = (len(separator) + len(part)) if parts else len(part)
+        char_addition = (len(separator) + len(part)) if parts else len(part)
+        part_tokens = tokenizer.count(part)
+        token_addition = (tokenizer.count(separator) + part_tokens) if parts else part_tokens
 
-        if current_len + addition > max_chars:
+        # Token-budget check (primary guard)
+        if current_tokens + token_addition > token_budget:
             logfire.warning(
-                f"Context budget reached: using {len(parts)} of {len(chunks)} chunks ({current_len} chars)"
+                f"Context token budget reached: using {len(parts)} of {len(chunks)} chunks "
+                f"({current_tokens} / {token_budget} tokens)"
+            )
+            break
+
+        # Character-budget check (secondary guard)
+        if current_chars + char_addition > max_chars:
+            logfire.warning(
+                f"Context char budget reached: using {len(parts)} of {len(chunks)} chunks "
+                f"({current_chars} chars)"
             )
             break
 
         parts.append(part)
-        current_len += addition
+        current_chars += char_addition
+        current_tokens += token_addition
 
     raw = separator.join(parts)
     return f"<retrieved_context>\n{raw}\n</retrieved_context>" if raw else ""

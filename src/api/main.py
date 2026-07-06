@@ -15,14 +15,14 @@ from psycopg_pool import AsyncConnectionPool
 
 from src.agents.agentic.grader import GraderAgent
 from src.agents.agentic.planner import PlannerAgent
+from src.agents.agentic.query_expander import QueryExpander
+from src.agents.agentic.query_rewriter import QueryRewriter
 from src.agents.agentic.router import RouterAgent
 from src.agents.agentic.synthesizer import SynthesizerAgent
 from src.agents.graph.graph import compile_graph_with_postgres
 from src.agents.graph.runner import GraphPipeline
 from src.agents.hybrid_search import HybridSearch
-from src.agents.memory.query_rewriter import QueryRewriter
 from src.agents.memory.short_term import ShortTermMemoryManager
-from src.agents.query_expander import QueryExpander
 from src.agents.retrieval import RetrievalAgent
 from src.api.routers.document_routes import create_document_routes
 from src.api.routers.query_router import create_query_routes

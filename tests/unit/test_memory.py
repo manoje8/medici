@@ -13,11 +13,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from src.agents.agentic.query_rewriter import QueryRewriter
 from src.agents.memory.conversation_model import (
     ConversationSession,
     EpisodicSummary,
 )
-from src.agents.memory.query_rewriter import QueryRewriter
 from src.common.llm.base import LLMResponse
 
 # Data Models

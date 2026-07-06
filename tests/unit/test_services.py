@@ -677,3 +677,233 @@ class TestHealthEndpoint:
 
         assert resp.status_code == 503
         assert resp.json()["status"] == "degraded"
+
+
+# Token-budget guard  (_build_context relevance-sort + token trim)
+
+
+class TestTokenBudgetGuard:
+    """Verify _build_context() sorts by relevance_score and respects the token budget."""
+
+    def _make_chunk(self, text: str, score: float, source: str = "doc.pdf") -> dict:
+        return {
+            "text": text,
+            "relevance_score": score,
+            "source": source,
+            "section": "Test",
+        }
+
+    @patch("src.agents.agentic.synthesizer.get_tokenizer")
+    def test_build_context_sorts_by_relevance_score(self, mock_get_tok):
+        """Highest-score chunk must appear first in the built context string."""
+        from src.agents.agentic.synthesizer import _build_context
+
+        # Tokenizer that never trips the budget (returns tiny counts)
+        tok = MagicMock()
+        tok.count.return_value = 1
+        tok.encode.return_value = [1]
+        mock_get_tok.return_value = tok
+
+        low = self._make_chunk("low relevance text", score=0.1)
+        high = self._make_chunk("high relevance text", score=0.9)
+
+        state = {"accepted_chunks": [low, high]}  # low-score chunk listed first
+        ctx = _build_context(state)
+
+        # high-score chunk must precede low-score chunk in output
+        assert ctx.index("high relevance text") < ctx.index("low relevance text")
+
+    @patch("src.agents.agentic.synthesizer.get_tokenizer")
+    def test_build_context_trims_low_relevance_when_over_budget(self, mock_get_tok):
+        """Low-score chunk is dropped when the token budget is exhausted."""
+        from src.agents.agentic.synthesizer import _build_context
+
+        tok = MagicMock()
+        # Each chunk part costs 60 tokens; separator costs 5 — budget=70 fits only 1 chunk.
+        tok.count.side_effect = lambda text: 60 if "relevance" in text else 5
+        tok.encode.return_value = list(range(60))
+        mock_get_tok.return_value = tok
+
+        high = self._make_chunk("high relevance content", score=0.9)
+        low = self._make_chunk("low relevance content", score=0.1)
+
+        from src.agents.agentic.synthesizer import config
+
+        with (
+            patch.object(config, "MAX_CONTEXT_CHARS", 1_000_000),
+            patch.object(config, "MODEL_CONTEXT_LIMIT", 70),
+            patch.object(config, "MAX_OUTPUT_TOKENS", 0),
+            patch.object(config, "MAX_PROMPT_OVERHEAD_TOKENS", 0),
+        ):
+            state = {"accepted_chunks": [low, high]}
+            ctx = _build_context(state)
+
+        assert "high relevance content" in ctx
+        assert "low relevance content" not in ctx
+
+    @patch("src.agents.agentic.synthesizer.get_tokenizer")
+    def test_build_context_empty_chunks_returns_empty_string(self, mock_get_tok):
+        """Empty accepted_chunks must produce an empty string."""
+        from src.agents.agentic.synthesizer import _build_context
+
+        tok = MagicMock()
+        tok.count.return_value = 0
+        mock_get_tok.return_value = tok
+
+        state = {"accepted_chunks": []}
+        assert _build_context(state) == ""
+
+    @patch("src.agents.agentic.synthesizer.get_tokenizer")
+    def test_build_context_all_chunks_fit_returns_all(self, mock_get_tok):
+        """When total tokens < budget, all chunks must be included."""
+        from src.agents.agentic.synthesizer import _build_context
+
+        tok = MagicMock()
+        tok.count.return_value = 1  # tiny token counts — nothing will overflow
+        mock_get_tok.return_value = tok
+
+        chunks = [
+            self._make_chunk("alpha content", score=0.8),
+            self._make_chunk("beta content", score=0.6),
+            self._make_chunk("gamma content", score=0.4),
+        ]
+
+        from src.agents.agentic.synthesizer import config
+
+        with (
+            patch.object(config, "MAX_CONTEXT_CHARS", 1_000_000),
+            patch.object(config, "MODEL_CONTEXT_LIMIT", 128_000),
+            patch.object(config, "MAX_OUTPUT_TOKENS", 2_048),
+            patch.object(config, "MAX_PROMPT_OVERHEAD_TOKENS", 1_024),
+        ):
+            state = {"accepted_chunks": chunks}
+            ctx = _build_context(state)
+
+        assert "alpha content" in ctx
+        assert "beta content" in ctx
+        assert "gamma content" in ctx
+
+
+# Query input guard (512-token truncation in QueryExpander / QueryRewriter)
+
+
+class TestQueryInputGuard:
+    """Verify that long queries are truncated to MAX_QUERY_INPUT_TOKENS before the LLM sees them."""
+
+    @pytest.mark.asyncio
+    @patch("src.common.utils.query_utils.get_tokenizer")
+    async def test_expander_truncates_long_query(self, mock_get_tok):
+        """A query > 512 tokens is truncated; the LLM prompt receives the shorter text."""
+        from src.agents.agentic.query_expander import QueryExpander
+
+        tok = MagicMock()
+        tok.encode.return_value = list(range(600))  # 600 tokens — over limit
+        tok.decode.return_value = "truncated query text"
+        mock_get_tok.return_value = tok
+
+        mock_llm = AsyncMock()
+        mock_llm.complete.return_value = MagicMock(parsed_json=["alt1", "alt2"])
+
+        expander = QueryExpander(llm_client=mock_llm)
+
+        with patch("src.common.utils.config") as mock_cfg:
+            mock_cfg.MAX_QUERY_INPUT_TOKENS = 512
+
+            await expander.expand("x" * 3000)
+
+        # decode must have been called with the first 512 tokens only
+        tok.decode.assert_called_once_with(list(range(512)))
+
+        # the prompt sent to the LLM must contain the truncated text
+        call_prompt = mock_llm.complete.call_args[0][0]
+        assert "truncated query text" in call_prompt
+
+    @pytest.mark.asyncio
+    @patch("src.common.utils.query_utils.get_tokenizer")
+    async def test_expander_passes_short_query_unchanged(self, mock_get_tok):
+        """A short query (≤ 512 tokens) is forwarded verbatim."""
+        from src.agents.agentic.query_expander import QueryExpander
+
+        tok = MagicMock()
+        tok.encode.return_value = list(range(10))  # 10 tokens — under limit
+        tok.decode.return_value = "should not be called"
+        mock_get_tok.return_value = tok
+
+        mock_llm = AsyncMock()
+        mock_llm.complete.return_value = MagicMock(parsed_json=["alt1"])
+
+        expander = QueryExpander(llm_client=mock_llm)
+        original_query = "What is the capital of France?"
+
+        with patch("src.common.utils.config") as mock_cfg:
+            mock_cfg.MAX_QUERY_INPUT_TOKENS = 512
+
+            await expander.expand(original_query)
+
+        # decode should NOT have been called (no truncation needed)
+        tok.decode.assert_not_called()
+
+        call_prompt = mock_llm.complete.call_args[0][0]
+        assert original_query in call_prompt
+
+    @pytest.mark.asyncio
+    @patch("src.common.utils.query_utils.get_tokenizer")
+    async def test_rewriter_truncates_long_query(self, mock_get_tok):
+        """A query > 512 tokens is truncated before rewrite() processes it."""
+        from src.agents.agentic.query_rewriter import QueryRewriter
+
+        tok = MagicMock()
+        tok.encode.return_value = list(range(700))  # 700 tokens — over limit
+        tok.decode.return_value = "truncated rewriter query"
+        mock_get_tok.return_value = tok
+
+        mock_llm = AsyncMock()
+        mock_llm.complete.return_value = MagicMock(
+            parsed_json={
+                "rewritten_query": "truncated rewriter query",
+                "was_rewritten": False,
+                "resolved_references": [],
+            }
+        )
+
+        rewriter = QueryRewriter(llm_client=mock_llm)
+
+        # Provide a session with turns so the rewriter actually sends the prompt
+        session = MagicMock()
+        session.turns = ["turn1"]
+        session.to_prompt_format.return_value = "history text"
+
+        with patch("src.common.utils.config") as mock_cfg:
+            mock_cfg.MAX_QUERY_INPUT_TOKENS = 512
+
+            await rewriter.rewrite("x" * 3500, session)
+
+        tok.decode.assert_called_once_with(list(range(512)))
+
+        call_prompt = mock_llm.complete.call_args[0][0]
+        assert "truncated rewriter query" in call_prompt
+
+    @pytest.mark.asyncio
+    @patch("src.common.utils.query_utils.get_tokenizer")
+    async def test_rewriter_passes_short_query_unchanged(self, mock_get_tok):
+        """A short query (≤ 512 tokens) is forwarded verbatim."""
+        from src.agents.agentic.query_rewriter import QueryRewriter
+
+        tok = MagicMock()
+        tok.encode.return_value = list(range(20))
+        mock_get_tok.return_value = tok
+
+        rewriter = QueryRewriter(llm_client=MagicMock())
+
+        session = MagicMock()
+        session.turns = []
+
+        original_query = "Who signed the contract?"
+
+        with patch("src.common.utils.config") as mock_cfg:
+            mock_cfg.MAX_QUERY_INPUT_TOKENS = 512
+
+            result = await rewriter.rewrite(original_query, session)
+
+        tok.decode.assert_not_called()
+        assert result["rewritten_query"] == original_query

@@ -1,6 +1,7 @@
 import logfire
 
 from src.agents.memory.conversation_model import ConversationSession
+from src.common.utils.query_utils import truncate_query
 
 
 class QueryRewriter:
@@ -8,6 +9,7 @@ class QueryRewriter:
         self.llm = llm_client
 
     async def rewrite(self, current_message: str, session: ConversationSession) -> dict:
+        current_message = truncate_query(current_message)
         if not session or not session.turns:
             return {
                 "rewritten_query": current_message,
