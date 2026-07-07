@@ -6,9 +6,16 @@ import logfire
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http.models import (
     Distance,
+    Document,
     FieldCondition,
     Filter,
+    Fusion,
+    FusionQuery,
     MatchValue,
+    Modifier,
+    PointStruct,
+    Prefetch,
+    SparseVectorParams,
     VectorParams,
 )
 from tenacity import (
@@ -87,7 +94,10 @@ class QdrantStorageService:
                 partial(
                     self.client.create_collection,
                     collection_name=self.collection_name,
-                    vectors_config=VectorParams(size=self.vector_size, distance=Distance.COSINE),
+                    vectors_config={
+                        "dense": VectorParams(size=self.vector_size, distance=Distance.COSINE)
+                    },
+                    sparse_vectors_config={"sparse": SparseVectorParams(modifier=Modifier.IDF)},
                 )
             )
             logfire.info(f"Created Qdrant collection: {self.collection_name}")
@@ -114,13 +124,18 @@ class QdrantStorageService:
             batch = embedded_chunks[start:end]
 
             points = [
-                ec.to_qdrant_point(
-                    point_id=str(
+                PointStruct(
+                    id=str(
                         uuid.uuid5(
                             uuid.NAMESPACE_DNS,
                             f"{ec.chunk.doc_id}_{ec.chunk.chunk_index}",
                         )
-                    )
+                    ),
+                    vector={
+                        "dense": Document(text=ec.chunk.text, model=config.QDRANT_DENSE_MODEL),
+                        "sparse": Document(text=ec.chunk.text, model=config.QDRANT_SPARSE_MODEL),
+                    },
+                    payload={"text": ec.chunk.text},
                 )
                 for ec in batch
             ]
@@ -144,7 +159,7 @@ class QdrantStorageService:
 
     async def search(
         self,
-        query_vector: list[float],
+        query: str,
         top_k: int = 5,
         doc_id_filter: str | None = None,
     ) -> list[dict]:
@@ -159,7 +174,22 @@ class QdrantStorageService:
             partial(
                 self.client.query_points,
                 collection_name=self.collection_name,
-                query=query_vector,
+                prefetch=[
+                    Prefetch(
+                        query=Document(text=query, model=config.QDRANT_SPARSE_MODEL),
+                        using="sparse",
+                        limit=top_k,
+                    ),
+                    Prefetch(
+                        query=Document(
+                            text=query,
+                            model=config.QDRANT_DENSE_MODEL,
+                        ),
+                        using=config.QDRANT_DENSE_MODEL,
+                        limit=top_k,
+                    ),
+                ],
+                query=FusionQuery(fusion=Fusion.RRF),
                 query_filter=search_filter,
                 limit=top_k,
                 with_payload=True,

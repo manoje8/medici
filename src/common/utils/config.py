@@ -33,6 +33,10 @@ class Config:
     QDRANT_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION_NAME", "rag_docs")
     QDRANT_API_KEY: str = os.getenv("QDRANT_API_KEY")
     QDRANT_CLUSTER_ENDPOINT: str = os.getenv("QDRANT_CLUSTER_ENDPOINT")
+    QDRANT_DENSE_MODEL: str = os.getenv(
+        "QDRANT_DENSE_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
+    )
+    QDRANT_SPARSE_MODEL: str = os.getenv("QDRANT_SPARSE_MODEL", "Qdrant/bm25")
 
     LOGFIRE_TOKEN: str = os.getenv("LOGFIRE_TOKEN")
     LANGSMITH_TRACING: str = os.getenv("LANGSMITH_TRACING")

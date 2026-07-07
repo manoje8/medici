@@ -19,6 +19,7 @@ google-cloud-documentai
 cloud-sql-python-connector
 
 qdrant-client
+qdrant-client[fastembed]
 tenacity
 flashrank
 redis

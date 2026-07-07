@@ -75,7 +75,7 @@ jobs:
             docling \
             trafilatura \
             google-genai \
-            qdrant-client \
+            qdrant-client[fastembed] \
             rank-bm25 \
             numpy \
             ascii_colors \

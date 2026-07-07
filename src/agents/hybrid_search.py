@@ -70,9 +70,9 @@ class HybridSearch:
         """Perform a single search with both dense and sparse retrieval."""
 
         with logfire.span("single_search", query=query[:50] + "..." if len(query) > 50 else query):
-            query_vector = await self.embedding_service.embed_single(query)
+            # query_vector = await self.embedding_service.embed_single(query)
             dense_result = await self.storage_service.search(
-                query_vector=query_vector,
+                query_vector=query,
                 top_k=self.dense_top_k,
                 doc_id_filter=doc_id_filter,
             )
