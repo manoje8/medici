@@ -9,6 +9,7 @@ from ascii_colors import ASCIIColors
 
 from src.common.services.qdrant import QdrantStorageService
 from src.common.services.sparse_index import SparseSearchIndex
+from src.common.utils.constants import HTML_FORMATS, OFFICE_FORMATS, TEXT_FORMATS
 
 
 def check_env():
@@ -104,3 +105,7 @@ def has_internet(host="8.8.8.8", port=53, timeout=2) -> bool:
         return True
     except OSError:
         return False
+
+
+def supported_extensions_list() -> set[Any]:
+    return set(list(HTML_FORMATS | OFFICE_FORMATS | TEXT_FORMATS | {".pdf"}))

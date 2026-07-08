@@ -111,7 +111,25 @@ class Parser:
 
         return "\n".join(rows)
 
-    def _parse_structure(self, html: str) -> list[dict]:
+    def _node_to_string(self, nodes: list[dict]) -> str:
+        parts = []
+
+        for node in nodes:
+            if node["type"] == "heading":
+                parts.append(f"{'#' * node['level']} {node['text']}")
+            elif node["type"] == "block":
+                prefix = f"[{node['breadcrumb']}]\n" if node["breadcrumb"] else ""
+                parts.append(f"{prefix}{node['text']}")
+            elif node["type"] == "table":
+                prefix = f"[{node['breadcrumb']}]\n" if node["breadcrumb"] else ""
+                parts.append(f"{prefix}<table>\n{node['text']}\n</table>")
+            else:
+                prefix = f"[{node['breadcrumb']}]\n" if node.get("breadcrumb") else ""
+                parts.append(f"{prefix}{node['text']}")
+
+        return "\n\n".join(parts)
+
+    def _parse_structure(self, html: str) -> str:
         """Returns a list of nodes: {type, level, text, path}"""
 
         soup = BeautifulSoup(html, "lxml")
@@ -164,4 +182,4 @@ class Parser:
                     }
                 )
 
-        return nodes
+        return self._node_to_string(nodes)

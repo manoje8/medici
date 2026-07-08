@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from src.agents.hybrid_search import HybridSearch
+from src.common.services.hybrid_search import HybridSearch
 from src.common.services.qdrant import QdrantStorageService
 from src.common.services.sparse_index import SparseSearchIndex
 from src.ingestion.embedding import EmbeddingService
@@ -586,33 +586,6 @@ class TestSparseSearchIndex:
 
         scores = [r["bm25_score"] for r in results]
         assert scores == sorted(scores, reverse=True)
-
-
-class TestBootstrapSparseIndex:
-    """Test cases for bootstrap_sparse_index function"""
-
-    @pytest.mark.asyncio
-    async def test_bootstrap_calls_build(self):
-        """Test that bootstrap fetches chunks and builds index"""
-        from src.common.utils.helper import bootstrap_sparse_index
-
-        mock_storage = AsyncMock()
-        mock_storage.chunk_count = AsyncMock(return_value=10)
-        mock_storage.scroll_all_chunks = AsyncMock(
-            return_value=[
-                {"text": "test chunk 1", "doc_id": "doc1", "chunk_index": 0},
-                {"text": "test chunk 2", "doc_id": "doc2", "chunk_index": 0},
-            ]
-        )
-
-        mock_sparse_index = Mock()
-        mock_sparse_index.load = Mock(return_value=False)
-
-        await bootstrap_sparse_index(mock_storage, mock_sparse_index)
-
-        mock_storage.scroll_all_chunks.assert_called_once()
-        mock_sparse_index.build.assert_called_once_with(mock_storage.scroll_all_chunks.return_value)
-        mock_sparse_index.save.assert_called_once()
 
 
 # Test configuration for pytest

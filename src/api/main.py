@@ -21,13 +21,13 @@ from src.agents.agentic.router import RouterAgent
 from src.agents.agentic.synthesizer import SynthesizerAgent
 from src.agents.graph.graph import compile_graph_with_postgres
 from src.agents.graph.runner import GraphPipeline
-from src.agents.hybrid_search import HybridSearch
 from src.agents.memory.short_term import ShortTermMemoryManager
 from src.agents.retrieval import RetrievalAgent
 from src.api.routers.document_routes import create_document_routes
 from src.api.routers.query_router import create_query_routes
 from src.common.llm.gemini import GeminiClient
 from src.common.llm.groq import GroqClient
+from src.common.services.hybrid_search import HybridSearch
 from src.common.services.qdrant import QdrantStorageService
 from src.common.services.reranker import Reranker
 from src.common.utils.config import config

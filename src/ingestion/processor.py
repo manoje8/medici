@@ -20,7 +20,7 @@ from src.common.utils.constants import (
     StorageType,
 )
 from src.common.utils.doc_cache import DocumentCache
-from src.common.utils.helper import separate_content
+from src.common.utils.helper import separate_content, supported_extensions_list
 from src.ingestion.chunking.chunk import BatchProcess
 from src.ingestion.chunking.chunker_factory import create_chunker
 from src.ingestion.chunking.chunking_config import ChunkingConfig
@@ -61,11 +61,8 @@ class Processor:
         self.in_storage = StorageFactory.create(local_config)
         self._max_concurrency = max_concurrency
 
-    def _supported_extensions(self) -> list[str]:
-        return list(HTML_FORMATS | OFFICE_FORMATS | TEXT_FORMATS | {".pdf"})
-
     def _filter_supported_files(self, file_paths: list[str], recursive: bool = False):
-        supported_extensions = set(self._supported_extensions())
+        supported_extensions = supported_extensions_list()
         supported_files = []
 
         for file_path in file_paths:
@@ -384,7 +381,7 @@ class Processor:
 
     async def ingest_document(
         self,
-        file_path: str,
+        file_path: str | Path,
         parse_method: ParseMethod = ParseMethod.DOCLING,
         doc_id: str | None = None,
         split_by_character: str = "\n\n",
