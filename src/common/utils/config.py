@@ -34,7 +34,7 @@ class Config:
     QDRANT_API_KEY: str = os.getenv("QDRANT_API_KEY")
     QDRANT_CLUSTER_ENDPOINT: str = os.getenv("QDRANT_CLUSTER_ENDPOINT")
     QDRANT_DENSE_MODEL: str = os.getenv(
-        "QDRANT_DENSE_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
+        "QDRANT_DENSE_MODEL", "sentence-transformers/all-mpnet-base-v2"
     )
     QDRANT_SPARSE_MODEL: str = os.getenv("QDRANT_SPARSE_MODEL", "Qdrant/bm25")
 

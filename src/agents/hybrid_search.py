@@ -3,7 +3,6 @@ import asyncio
 import logfire
 
 from src.common.services.qdrant import QdrantStorageService
-from src.common.services.sparse_index import SparseSearchIndex
 from src.ingestion.embedding import EmbeddingService
 
 
@@ -12,15 +11,11 @@ class HybridSearch:
         self,
         storage_service: QdrantStorageService,
         embedding_service: EmbeddingService,
-        sparse_index: SparseSearchIndex,
-        dense_top_k: int = 20,
-        sparse_top_k: int = 20,
+        top_k: int = 20,
     ):
         self.storage_service = storage_service
         self.embedding_service = embedding_service
-        self.sparse_index = sparse_index
-        self.dense_top_k = dense_top_k
-        self.sparse_top_k = sparse_top_k
+        self.top_k = top_k
 
     def _reciprocal_rank_fusion(self, result_lists: list, k: int = 10):
         """Merge multiple ranked result lists using a compound doc_id:chunk_index key."""
@@ -70,15 +65,15 @@ class HybridSearch:
         """Perform a single search with both dense and sparse retrieval."""
 
         with logfire.span("single_search", query=query[:50] + "..." if len(query) > 50 else query):
-            # query_vector = await self.embedding_service.embed_single(query)
-            dense_result = await self.storage_service.search(
-                query_vector=query,
-                top_k=self.dense_top_k,
+            query_vector = await self.embedding_service.embed_single(query)
+            hybrid_result = await self.storage_service.search(
+                query=query,
+                query_vector=query_vector,
+                top_k=self.top_k,
                 doc_id_filter=doc_id_filter,
             )
-            sparse_result = self.sparse_index.search(query, top_k=self.sparse_top_k)
 
-            return dense_result, sparse_result
+            return hybrid_result
 
     async def search(
         self, queries: list[str], doc_id_filter: str | None = None, timeout: float = 8.0
@@ -96,78 +91,56 @@ class HybridSearch:
             queries=queries[:3] + ["..."] if len(queries) > 3 else queries,
             doc_id_filter=doc_id_filter,
             timeout=timeout,
-            dense_top_k=self.dense_top_k,
-            sparse_top_k=self.sparse_top_k,
+            top_k=self.top_k,
         )
-
-        if len(self.sparse_index.chunks) <= self.dense_top_k:
-            queries = queries[:1]
 
         async def _run():
             search_one = [self._search_one(query, doc_id_filter) for query in queries]
-            results = await asyncio.gather(*search_one, return_exceptions=True)
-            all_dense, all_sparse = [], []
-            failed_queries = []
-
-            for query, result in zip(queries, results, strict=False):
-                if isinstance(result, Exception):
-                    failed_queries.append(query)
-                    logfire.warning(
-                        "search_failed_for_query",
-                        query=query[:50] + "..." if len(query) > 50 else query,
-                        error=str(result),
-                        error_type=type(result).__name__,
-                    )
-                    continue
-                dense_result, sparse_result = result
-                all_dense.append(dense_result)
-                all_sparse.append(sparse_result)
-
-            if failed_queries:
-                logfire.warning(
-                    "some_queries_failed",
-                    failed_queries=(
-                        failed_queries[:3] + ["..."] if len(failed_queries) > 3 else failed_queries
-                    ),
-                    failure_count=len(failed_queries),
-                    total_queries=len(queries),
-                )
-
-            return all_dense, all_sparse
+            return await asyncio.gather(*search_one, return_exceptions=True)
 
         try:
-            all_dense, all_sparse = await asyncio.wait_for(_run(), timeout=timeout)
+            per_query_results = await asyncio.wait_for(_run(), timeout=timeout)
+            logfire.info("hybrid_search_result", results=len(per_query_results))
         except asyncio.TimeoutError:
             logfire.error(
                 "hybrid_search_timeout",
                 timeout_seconds=timeout,
                 num_queries=len(queries),
-                dense_top_k=self.dense_top_k,
-                sparse_top_k=self.sparse_top_k,
+                top_k=self.top_k,
                 doc_id_filter=doc_id_filter,
             )
             return []
 
-        if not all_dense or not all_sparse:
+        flat: list[dict] = []
+        for query, result in zip(queries, per_query_results, strict=False):
+            if isinstance(result, BaseException):
+                logfire.warning("single_search_failed", query=query[:50], error=str(result))
+                continue
+            flat.extend(result)
+
+        if not flat:
             logfire.warning(
                 "hybrid_search_no_results",
-                has_dense_results=bool(all_dense),
-                has_sparse_results=bool(all_sparse),
+                has_results=bool(flat),
                 num_queries=len(queries),
             )
             return []
 
-        dense_merged = self._reciprocal_rank_fusion(all_dense) if all_sparse else []
-        sparse_merged = self._reciprocal_rank_fusion(all_sparse) if all_dense else []
-        final_merged = self._reciprocal_rank_fusion([dense_merged, sparse_merged])
+        # best: dict[tuple, dict] = {}
+        # for item in flat:
+        #     key = (item.get("doc_id"), item.get("chunk_index"))
+        #     if key not in best or (item.get("score") or 0) > (best[key].get("score") or 0):
+        #         best[key] = item
+
+        final = sorted(flat, key=lambda d: d.get("score") or 0, reverse=True)[: self.top_k]
 
         logfire.info(
             "hybrid_search_complete",
-            num_unique_candidates=len(final_merged),
+            num_unique_candidates=len(final),
             num_queries=len(queries),
             doc_id_filter=doc_id_filter,
-            top_score=final_merged[0].get("rrf_score", 0.0) if final_merged else None,
-            top_doc_id=final_merged[0].get("doc_id") if final_merged else None,
+            top_score=final[0].get("score", 0.0) if final else None,
+            top_doc_id=final[0].get("doc_id") if final else None,
         )
 
-        return final_merged
+        return final

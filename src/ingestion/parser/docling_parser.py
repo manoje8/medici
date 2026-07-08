@@ -9,7 +9,7 @@ import logfire
 from docling.datamodel.pipeline_options import TableFormerMode
 
 from src.common.utils.config import config
-from src.common.utils.constants import HTML_FORMATS, OFFICE_FORMATS
+from src.common.utils.constants import HTML_FORMATS, OFFICE_FORMATS, TEXT_FORMATS
 from src.ingestion.parser.base_parser import Parser
 
 
@@ -277,7 +277,8 @@ class DoclingParser(Parser):
                 return self.parse_html(file_path)
             elif ext in OFFICE_FORMATS:
                 return self.parse_office(file_path)
-
+            elif ext in TEXT_FORMATS:
+                return self.parse_text_file(file_path)
             else:
                 raise ValueError(
                     f"Unsupported file format: {ext}. "
@@ -323,6 +324,18 @@ class DoclingParser(Parser):
             raise
 
     def parse_office(self, file_path: str | Path, output_dir: str | None = None, **kwargs):
+        try:
+            file_path = Path(file_path)
+            if not file_path.exists():
+                raise FileNotFoundError(f"Office file does not exist: {file_path}")
+
+            return self._parse_with_converter(file_path, output_dir)
+
+        except Exception as e:
+            logfire.error(f"Error in parse office: {str(e)}")
+            raise
+
+    def parse_text_file(self, file_path: str | Path, output_dir: str | None = None, **kwargs):
         try:
             file_path = Path(file_path)
             if not file_path.exists():

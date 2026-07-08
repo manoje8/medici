@@ -20,7 +20,7 @@ from src.common.utils.constants import (
     StorageType,
 )
 from src.common.utils.doc_cache import DocumentCache
-from src.common.utils.helper import bootstrap_sparse_index, separate_content
+from src.common.utils.helper import separate_content
 from src.ingestion.chunking.chunk import BatchProcess
 from src.ingestion.chunking.chunker_factory import create_chunker
 from src.ingestion.chunking.chunking_config import ChunkingConfig
@@ -455,10 +455,6 @@ class Processor:
         embedded_chunks = await self.embedding_service.embed_chunks(chunks)
         self.in_storage.upload(key="embedded_chunks", data=embedded_chunks)
         logfire.info(f"Stage 3 complete: {len(embedded_chunks)} vectors")
-
-        # Rebuild sparse index to stay in sync
-        logfire.info("Rebuilding sparse index...")
-        await bootstrap_sparse_index(self.storage_service, self.sparse_index)
 
         await self.storage_service.upsert_embedded_chunks(embedded_chunks)
         logfire.info("Stage 4 complete: stored in Qdrant")

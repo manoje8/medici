@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -24,6 +25,7 @@ def mock_qdrant_storage():
     storage = Mock(spec=QdrantStorageService)
     storage.search = AsyncMock()
     storage.scroll_all_chunks = AsyncMock()
+    storage.chunk_count = AsyncMock(return_value=10)
     return storage
 
 
@@ -40,83 +42,52 @@ def mock_embedding_service():
 def mock_sparse_index():
     """Fixture for mocked sparse search index"""
     index = Mock(spec=SparseSearchIndex)
-    index.search = Mock()
-    index.chunks = ["chunk"] * 30
+    index.search = Mock(return_value=[])
+    index.build = Mock()
+    index.save = Mock()
+    index.load = Mock(return_value=False)
+    index.chunks = []
     return index
 
 
 @pytest.fixture
-def hybrid_search(mock_qdrant_storage, mock_embedding_service, mock_sparse_index):
+def hybrid_search(mock_qdrant_storage, mock_embedding_service):
     """Fixture for HybridSearch instance with mocked dependencies"""
-
     return HybridSearch(
         storage_service=mock_qdrant_storage,
         embedding_service=mock_embedding_service,
-        sparse_index=mock_sparse_index,
-        dense_top_k=20,
-        sparse_top_k=20,
+        top_k=20,
     )
 
 
 @pytest.fixture
-def sample_dense_results():
-    """Fixture providing sample dense search results"""
+def sample_search_results():
+    """Fixture providing sample search results"""
     return [
-        [
-            {
-                "doc_id": "doc1",
-                "chunk_index": 0,
-                "text": "Sample text 1",
-                "score": 0.95,
-                "section": "intro",
-                "source": "doc1.pdf",
-            },
-            {
-                "doc_id": "doc1",
-                "chunk_index": 1,
-                "text": "Sample text 2",
-                "score": 0.85,
-                "section": "methods",
-                "source": "doc1.pdf",
-            },
-        ],
-        [
-            {
-                "doc_id": "doc2",
-                "chunk_index": 0,
-                "text": "Sample text 3",
-                "score": 0.90,
-                "section": "intro",
-                "source": "doc2.pdf",
-            }
-        ],
-    ]
-
-
-@pytest.fixture
-def sample_sparse_results():
-    """Fixture providing sample sparse search results"""
-    return [
-        [
-            {
-                "doc_id": "doc1",
-                "chunk_index": 0,
-                "text": "Sample text 1",
-                "bm25_score": 1.2,
-                "section": "intro",
-                "source": "doc1.pdf",
-            }
-        ],
-        [
-            {
-                "doc_id": "doc2",
-                "chunk_index": 0,
-                "text": "Sample text 3",
-                "bm25_score": 0.8,
-                "section": "intro",
-                "source": "doc2.pdf",
-            }
-        ],
+        {
+            "doc_id": "doc1",
+            "chunk_index": 0,
+            "text": "Sample text 1",
+            "score": 0.95,
+            "section": "intro",
+            "source": "doc1.pdf",
+        },
+        {
+            "doc_id": "doc1",
+            "chunk_index": 1,
+            "text": "Sample text 2",
+            "score": 0.85,
+            "section": "methods",
+            "source": "doc1.pdf",
+        },
+        {
+            "doc_id": "doc2",
+            "chunk_index": 0,
+            "text": "Sample text 3",
+            "score": 0.90,
+            "section": "intro",
+            "source": "doc2.pdf",
+        },
     ]
 
 
@@ -200,6 +171,20 @@ class TestReciprocalRankFusion:
         assert len(merged) == 1
         assert abs(merged[0]["rrf_score"] - expected_score) < 0.0001
 
+    def test_missing_doc_id_handling(self, hybrid_search):
+        """Test RRF with missing doc_id in chunks"""
+        result_lists = [
+            [
+                {"chunk_index": 0, "text": "text1"},
+                {"doc_id": "doc2", "chunk_index": 0, "text": "text2"},
+            ],
+        ]
+
+        merged = hybrid_search._reciprocal_rank_fusion(result_lists)
+
+        assert len(merged) == 2
+        assert merged[0]["chunk_index"] == 0
+
 
 class TestHybridSearch:
     """Test cases for the main search method"""
@@ -210,12 +195,11 @@ class TestHybridSearch:
         hybrid_search,
         mock_qdrant_storage,
         mock_embedding_service,
-        mock_sparse_index,
     ):
         """Test search with a single query"""
-        # Setup mocks
         mock_embedding_service.embed_single.return_value = [0.1] * 1536
-        mock_qdrant_storage.search.return_value = [
+
+        mock_search_result = [
             {
                 "text": "test text",
                 "doc_id": "doc1",
@@ -225,21 +209,12 @@ class TestHybridSearch:
                 "score": 0.95,
             }
         ]
-        mock_sparse_index.search.return_value = [
-            {
-                "doc_id": "doc1",
-                "chunk_index": 0,
-                "text": "test text",
-                "bm25_score": 1.5,
-                "section": "Test Section",
-                "source": "test.pdf",
-            }
-        ]
+        mock_qdrant_storage.search.return_value = mock_search_result
 
         results = await hybrid_search.search(["test query"])
 
         assert len(results) > 0
-        assert all("rrf_score" in chunk for chunk in results)
+        assert "score" in results[0]
 
     @pytest.mark.asyncio
     async def test_multi_query_search(
@@ -247,7 +222,6 @@ class TestHybridSearch:
         hybrid_search,
         mock_qdrant_storage,
         mock_embedding_service,
-        mock_sparse_index,
     ):
         """Test search with multiple query variants"""
         queries = ["query variant 1", "query variant 2"]
@@ -278,33 +252,13 @@ class TestHybridSearch:
             ],
         ]
 
-        mock_sparse_index.search.side_effect = [
-            [
-                {
-                    "doc_id": "doc1",
-                    "chunk_index": 0,
-                    "text": "result 1",
-                    "bm25_score": 1.2,
-                }
-            ],
-            [
-                {
-                    "doc_id": "doc2",
-                    "chunk_index": 0,
-                    "text": "result 2",
-                    "bm25_score": 0.9,
-                }
-            ],
-        ]
-
         results = await hybrid_search.search(queries)
 
-        # Should have deduplicated results
-        assert len(results) > 0
+        # Should have results from both queries
+        assert len(results) == 2
         # Verify that embedding was called for each query
         assert mock_embedding_service.embed_single.call_count == 2
         assert mock_qdrant_storage.search.call_count == 2
-        assert mock_sparse_index.search.call_count == 2
 
     @pytest.mark.asyncio
     async def test_search_with_doc_id_filter(
@@ -312,43 +266,38 @@ class TestHybridSearch:
         hybrid_search,
         mock_qdrant_storage,
         mock_embedding_service,
-        mock_sparse_index,
     ):
         """Test search with document ID filtering"""
         doc_id_filter = "doc123"
 
         mock_embedding_service.embed_single.return_value = [0.1] * 1536
         mock_qdrant_storage.search.return_value = []
-        mock_sparse_index.search.return_value = []
 
         await hybrid_search.search(["test query"], doc_id_filter=doc_id_filter)
 
-        # Verify doc_id_filter is passed to dense search
         mock_qdrant_storage.search.assert_called_with(
-            query_vector=[0.1] * 1536, top_k=20, doc_id_filter=doc_id_filter
+            query="test query",
+            query_vector=[0.1] * 1536,
+            top_k=20,
+            doc_id_filter=doc_id_filter,
         )
 
     @pytest.mark.asyncio
-    async def test_search_combines_dense_and_sparse(
+    async def test_search_with_multiple_results_from_same_query(
         self,
         hybrid_search,
         mock_qdrant_storage,
         mock_embedding_service,
-        mock_sparse_index,
-        sample_dense_results,
-        sample_sparse_results,
+        sample_search_results,
     ):
-        """Test that search properly combines dense and sparse results"""
+        """Test search returns multiple results from a single query"""
         mock_embedding_service.embed_single.return_value = [0.1] * 1536
-        mock_qdrant_storage.search.return_value = sample_dense_results[0]
-        mock_sparse_index.search.return_value = sample_sparse_results[0]
+        mock_qdrant_storage.search.return_value = sample_search_results
 
         results = await hybrid_search.search(["test query"])
 
-        # Should have results from both sources
-        assert len(results) > 0
-        # Results should be sorted by RRF score
-        assert results[0]["rrf_score"] >= results[-1]["rrf_score"] if len(results) > 1 else True
+        assert len(results) == 3
+        assert results[0]["score"] >= results[1]["score"] >= results[2]["score"]
 
     @pytest.mark.asyncio
     async def test_empty_search_results(
@@ -356,15 +305,54 @@ class TestHybridSearch:
         hybrid_search,
         mock_qdrant_storage,
         mock_embedding_service,
-        mock_sparse_index,
     ):
         """Test search when no results are found"""
         mock_embedding_service.embed_single.return_value = [0.1] * 1536
         mock_qdrant_storage.search.return_value = []
-        mock_sparse_index.search.return_value = []
 
         results = await hybrid_search.search(["nonexistent query"])
 
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_search_timeout(
+        self,
+        hybrid_search,
+        mock_qdrant_storage,
+        mock_embedding_service,
+    ):
+        """Test search timeout handling"""
+        mock_embedding_service.embed_single.side_effect = AsyncMock(
+            side_effect=asyncio.TimeoutError()
+        )
+
+        results = await hybrid_search.search(["test query"], timeout=0.1)
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_search_with_embedding_failure(
+        self,
+        hybrid_search,
+        mock_embedding_service,
+    ):
+        """Test search when embedding service fails"""
+        mock_embedding_service.embed_single.side_effect = Exception("Embedding failed")
+
+        results = await hybrid_search.search(["test query"])
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_search_with_storage_failure(
+        self,
+        hybrid_search,
+        mock_qdrant_storage,
+        mock_embedding_service,
+    ):
+        """Test search when storage service fails"""
+        mock_embedding_service.embed_single.return_value = [0.1] * 1536
+        mock_qdrant_storage.search.side_effect = Exception("Storage failed")
+
+        results = await hybrid_search.search(["test query"])
         assert results == []
 
 
@@ -411,7 +399,7 @@ class TestQdrantStorageService:
         mock_qdrant_client.query_points = AsyncMock(return_value=mock_result)
 
         results = await qdrant_service.search(
-            query_vector=[0.1] * 1536, top_k=5, doc_id_filter="doc1"
+            query="test query", query_vector=[0.1] * 1536, top_k=5, doc_id_filter="doc1"
         )
 
         assert len(results) == 1
@@ -588,7 +576,7 @@ class TestSparseSearchIndex:
         results = sparse_index.search("xyznonexistent123", top_k=5)
 
         # Should return empty list since no chunk contains this term
-        assert all(r.get("bm25_score", 0) > 0 for r in results) or len(results) == 0
+        assert len(results) == 0
 
     def test_search_score_ordering(self, sparse_index, sample_chunks):
         """Test that results are ordered by score"""
@@ -609,14 +597,16 @@ class TestBootstrapSparseIndex:
         from src.common.utils.helper import bootstrap_sparse_index
 
         mock_storage = AsyncMock()
-        mock_storage.chunk_count.return_value = 1
-
-        mock_storage.scroll_all_chunks.return_value = [
-            {"text": "test chunk", "doc_id": "doc1", "chunk_index": 0}
-        ]
+        mock_storage.chunk_count = AsyncMock(return_value=10)
+        mock_storage.scroll_all_chunks = AsyncMock(
+            return_value=[
+                {"text": "test chunk 1", "doc_id": "doc1", "chunk_index": 0},
+                {"text": "test chunk 2", "doc_id": "doc2", "chunk_index": 0},
+            ]
+        )
 
         mock_sparse_index = Mock()
-        mock_sparse_index.load.return_value = False
+        mock_sparse_index.load = Mock(return_value=False)
 
         await bootstrap_sparse_index(mock_storage, mock_sparse_index)
 

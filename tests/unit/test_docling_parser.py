@@ -179,7 +179,7 @@ class TestDoclingParser:
 
     def test_parse_doc_unsupported_format(self, parser, tmp_path):
         """Test parsing an unsupported file format"""
-        txt_path = tmp_path / "test.txt"
+        txt_path = tmp_path / "test.cpp"
         txt_path.touch()
 
         with pytest.raises(ValueError, match="Unsupported file format"):

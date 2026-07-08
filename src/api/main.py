@@ -30,9 +30,8 @@ from src.common.llm.gemini import GeminiClient
 from src.common.llm.groq import GroqClient
 from src.common.services.qdrant import QdrantStorageService
 from src.common.services.reranker import Reranker
-from src.common.services.sparse_index import SparseSearchIndex
 from src.common.utils.config import config
-from src.common.utils.helper import bootstrap_sparse_index, check_env, has_internet
+from src.common.utils.helper import check_env, has_internet
 from src.ingestion.embedding import EmbeddingService
 
 
@@ -54,7 +53,7 @@ async def lifespan(app: FastAPI):
         await asyncio.wait_for(pool.wait(), timeout=10)
         closers.append(("postgres pool", pool.close))
 
-        gemini_client = GeminiClient(timeout_seconds=30, max_retries=2)
+        gemini_client = GeminiClient(timeout_seconds=30, max_retries=2, model=config.GEMINI_MODEL)
         groq_client = GroqClient(timeout_seconds=30, max_retries=2)
 
         # episodic = EpisodicMemoryManager(llm_client=llm_client, pool=pool)
@@ -75,12 +74,8 @@ async def lifespan(app: FastAPI):
         )
         closers.append(("qdrant client", storage_service.client.close))
 
-        sparse_index = SparseSearchIndex()
-
         hybrid_search = HybridSearch(
-            storage_service=storage_service,
-            embedding_service=embedding_service,
-            sparse_index=sparse_index,
+            storage_service=storage_service, embedding_service=embedding_service
         )
         reranker = Reranker()
         query_expander = QueryExpander(gemini_client)
@@ -107,7 +102,6 @@ async def lifespan(app: FastAPI):
         app.state.pool = pool
         app.state.qdrant = storage_service
 
-        rebuild_task = asyncio.create_task(bootstrap_sparse_index(storage_service, sparse_index))
     except Exception:
         logfire.error("Startup failed; rolling back partially-initialized resources")
         for _name, close in reversed(closers):

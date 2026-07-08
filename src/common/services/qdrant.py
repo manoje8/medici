@@ -78,7 +78,7 @@ class QdrantStorageService:
 
     async def validate_vector_dimension(self) -> None:
         info = await _with_retry(partial(self.client.get_collection, self.collection_name))
-        actual = info.config.params.vectors.size
+        actual = info.config.params.vectors["dense"].size
         if actual != self.vector_size:
             raise ValueError(
                 f"Vector dimension mismatch for collection '{self.collection_name}': "
@@ -132,7 +132,7 @@ class QdrantStorageService:
                         )
                     ),
                     vector={
-                        "dense": Document(text=ec.chunk.text, model=config.QDRANT_DENSE_MODEL),
+                        "dense": ec.vector,
                         "sparse": Document(text=ec.chunk.text, model=config.QDRANT_SPARSE_MODEL),
                     },
                     payload={"text": ec.chunk.text},
@@ -160,6 +160,7 @@ class QdrantStorageService:
     async def search(
         self,
         query: str,
+        query_vector: list[float],
         top_k: int = 5,
         doc_id_filter: str | None = None,
     ) -> list[dict]:
@@ -181,11 +182,8 @@ class QdrantStorageService:
                         limit=top_k,
                     ),
                     Prefetch(
-                        query=Document(
-                            text=query,
-                            model=config.QDRANT_DENSE_MODEL,
-                        ),
-                        using=config.QDRANT_DENSE_MODEL,
+                        query=query_vector,
+                        using="dense",
                         limit=top_k,
                     ),
                 ],

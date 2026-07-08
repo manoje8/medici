@@ -163,7 +163,7 @@ class TestRetrievalAgent:
                 {
                     "text": "RAG chunk",
                     "source": "doc.pdf",
-                    "rrf_score": 0.9,
+                    "score": 0.9,
                     "doc_id": "d1",
                     "chunk_index": 0,
                 }
@@ -179,7 +179,7 @@ class TestRetrievalAgent:
                 {
                     "text": "RAG chunk",
                     "source": "doc.pdf",
-                    "rrf_score": 0.9,
+                    "score": 0.9,
                     "doc_id": "d1",
                     "chunk_index": 0,
                 }
@@ -229,7 +229,7 @@ class TestRetrievalAgent:
     async def test_retrieve_calls_reranker_with_candidates(
         self, agent, mock_reranker, mock_hybrid_search
     ):
-        candidates = [{"text": "c1", "rrf_score": 0.8}]
+        candidates = [{"text": "c1", "score": 0.8}]
         mock_hybrid_search.search = AsyncMock(return_value=candidates)
 
         await agent.retrieve("query", "original question")
@@ -281,8 +281,8 @@ class TestRetrievalAgent:
     @pytest.mark.asyncio
     async def test_retrieve_and_evaluate_populates_rrf_scores(self, agent, mock_llm):
         chunks = [
-            {"text": "x", "rrf_score": 0.77, "source": "a.pdf"},
-            {"text": "y", "rrf_score": 0.55, "source": "b.pdf"},
+            {"text": "x", "score": 0.77, "source": "a.pdf"},
+            {"text": "y", "score": 0.55, "source": "b.pdf"},
         ]
         agent.reranker.rerank = AsyncMock(return_value=chunks)
         mock_llm.complete = AsyncMock(

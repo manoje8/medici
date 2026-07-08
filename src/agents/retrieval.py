@@ -90,7 +90,7 @@ Use "exhausted" if the information is likely not in this document.
             logfire.debug(
                 "reranking_complete",
                 num_results=len(rerank_results),
-                top_score=(rerank_results[0].get("rrf_score", 0.0) if rerank_results else None),
+                top_score=(rerank_results[0].get("score", 0.0) if rerank_results else None),
             )
 
         return rerank_results
@@ -128,7 +128,7 @@ Use "exhausted" if the information is likely not in this document.
                 reasoning="No results after hybrid search and reranking",
             )
 
-        top_score = results[0].get("rrf_score", 0.0)
+        top_score = results[0].get("score", 0.0)
         if top_score > HIGH_CONFIDENCE_RRF_THRESHOLD:
             logfire.info(
                 "high_confidence_retrieval_skipping_evaluator",
@@ -141,7 +141,7 @@ Use "exhausted" if the information is likely not in this document.
             return RetrievalRound(
                 query_used=query,
                 chunk_retrieved=results,
-                relevance_score=[r["rrf_score"] for r in results],
+                relevance_score=[r["score"] for r in results],
                 decision=RetrievalDecision.SUFFICIENT,
                 reasoning="Top rerank score {top_score:.2f} exceeded confidence threshold",
             )
@@ -168,14 +168,14 @@ Use "exhausted" if the information is likely not in this document.
                 else evaluation["reasoning"]
             ),
             num_results=len(results),
-            top_score=results[0].get("rrf_score", 0.0) if results else None,
+            top_score=results[0].get("score", 0.0) if results else None,
             has_refined_query=evaluation.get("refined_query") is not None,
         )
 
         return RetrievalRound(
             query_used=query,
             chunk_retrieved=results,
-            relevance_score=[r["rrf_score"] for r in results],
+            relevance_score=[r["score"] for r in results],
             decision=decision,
             reasoning=evaluation["reasoning"],
             refined_query=evaluation.get("refined_query"),

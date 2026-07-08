@@ -244,6 +244,7 @@ class TestQdrantStorageService:
             mock_config.QDRANT_COLLECTION_NAME = "test_collection"
             mock_config.QDRANT_CLUSTER_ENDPOINT = "http://localhost:6333"
             mock_config.QDRANT_API_KEY = "test-key"
+            mock_config.QDRANT_SPARSE_MODEL = "test-model"
 
             mock_qdrant = AsyncMock()
             mock_cls.return_value = mock_qdrant
@@ -272,9 +273,9 @@ class TestQdrantStorageService:
     @pytest.mark.asyncio
     async def test_skips_creation_when_collection_exists(self, service, mock_client):
         mock_client.collection_exists.return_value = True
-        # Simulate dimension match
         info = MagicMock()
-        info.config.params.vectors.size = 4
+        vectors_config = {"dense": MagicMock(size=4)}
+        info.config.params.vectors = vectors_config
         mock_client.get_collection.return_value = info
 
         await service.ensure_collection_exists()
@@ -284,7 +285,8 @@ class TestQdrantStorageService:
     @pytest.mark.asyncio
     async def test_validate_vector_dimension_mismatch_raises(self, service, mock_client):
         info = MagicMock()
-        info.config.params.vectors.size = 99  # Wrong dimension
+        vectors_config = {"dense": MagicMock(size=99)}
+        info.config.params.vectors = vectors_config
         mock_client.get_collection.return_value = info
 
         with pytest.raises(ValueError, match="Vector dimension mismatch"):
@@ -293,7 +295,9 @@ class TestQdrantStorageService:
     @pytest.mark.asyncio
     async def test_validate_vector_dimension_match_ok(self, service, mock_client):
         info = MagicMock()
-        info.config.params.vectors.size = 4  # Matches service.vector_size
+        # Matches service.vector_size (4)
+        vectors_config = {"dense": MagicMock(size=4)}
+        info.config.params.vectors = vectors_config
         mock_client.get_collection.return_value = info
 
         # Should not raise
@@ -309,7 +313,8 @@ class TestQdrantStorageService:
             ec = MagicMock()
             ec.chunk.doc_id = doc_id
             ec.chunk.chunk_index = chunk_index
-            ec.to_qdrant_point.return_value = MagicMock()
+            ec.chunk.text = text
+            ec.vector = [0.1, 0.2, 0.3, 0.4]
             return ec
 
         return _make
@@ -318,7 +323,8 @@ class TestQdrantStorageService:
     async def test_upsert_calls_ensure_collection(self, service, mock_client, make_embedded_chunk):
         mock_client.collection_exists.return_value = True
         info = MagicMock()
-        info.config.params.vectors.size = 4
+        vectors_config = {"dense": MagicMock(size=4)}
+        info.config.params.vectors = vectors_config
         mock_client.get_collection.return_value = info
 
         chunks = [make_embedded_chunk(chunk_index=i) for i in range(3)]
@@ -366,7 +372,9 @@ class TestQdrantStorageService:
         result_mock.points = [point]
         mock_client.query_points.return_value = result_mock
 
-        results = await service.search(query_vector=[0.1, 0.2, 0.3, 0.4], top_k=5)
+        results = await service.search(
+            query="test query", query_vector=[0.1, 0.2, 0.3, 0.4], top_k=5
+        )
 
         assert len(results) == 1
         assert results[0]["text"] == "Some chunk text"
@@ -379,7 +387,9 @@ class TestQdrantStorageService:
         result_mock.points = []
         mock_client.query_points.return_value = result_mock
 
-        await service.search(query_vector=[0.0, 0.1, 0.2, 0.3], doc_id_filter="doc-123")
+        await service.search(
+            query="test query", query_vector=[0.0, 0.1, 0.2, 0.3], doc_id_filter="doc-123"
+        )
 
         call_kwargs = mock_client.query_points.call_args[1]
         assert call_kwargs["query_filter"] is not None
@@ -390,7 +400,7 @@ class TestQdrantStorageService:
         result_mock.points = []
         mock_client.query_points.return_value = result_mock
 
-        await service.search(query_vector=[0.0, 0.1, 0.2, 0.3])
+        await service.search(query="test query", query_vector=[0.0, 0.1, 0.2, 0.3])
 
         call_kwargs = mock_client.query_points.call_args[1]
         assert call_kwargs["query_filter"] is None
@@ -410,7 +420,7 @@ class TestQdrantStorageService:
         result_mock.points = [point]
         mock_client.query_points.return_value = result_mock
 
-        results = await service.search(query_vector=[0.0, 0.1, 0.2, 0.3])
+        results = await service.search(query="test query", query_vector=[0.0, 0.1, 0.2, 0.3])
         assert results[0]["score"] is None
 
     # --- scroll_all_chunks ---
@@ -464,11 +474,6 @@ class TestQdrantStorageService:
         assert mock_client.scroll.await_count == 2
 
 
-# ---------------------------------------------------------------------------
-# Retry logic
-# ---------------------------------------------------------------------------
-
-
 class TestQdrantRetry:
     """Verify tenacity retry is wired into Qdrant calls."""
 
@@ -482,6 +487,7 @@ class TestQdrantRetry:
             mock_config.QDRANT_COLLECTION_NAME = "test_collection"
             mock_config.QDRANT_CLUSTER_ENDPOINT = "http://localhost:6333"
             mock_config.QDRANT_API_KEY = "key"
+            mock_config.QDRANT_SPARSE_MODEL = "test-model"
             mock_qdrant = AsyncMock()
             mock_cls.return_value = mock_qdrant
             yield mock_qdrant
@@ -501,7 +507,7 @@ class TestQdrantRetry:
         mock_client.query_points.side_effect = OSError("timeout")
 
         with pytest.raises(OSError, match="timeout"):
-            await service.search(query_vector=[0.1, 0.2, 0.3, 0.4])
+            await service.search(query="test query", query_vector=[0.1, 0.2, 0.3, 0.4])
 
         assert mock_client.query_points.await_count == 3
 
@@ -512,7 +518,7 @@ class TestQdrantRetry:
         result_mock.points = []
         mock_client.query_points.return_value = result_mock
 
-        await service.search(query_vector=[0.1, 0.2, 0.3, 0.4])
+        await service.search(query="test query", query_vector=[0.1, 0.2, 0.3, 0.4])
 
         assert mock_client.query_points.await_count == 1
 
@@ -546,15 +552,10 @@ class TestQdrantRetry:
             result_mock,  # second attempt succeeds
         ]
 
-        results = await service.search(query_vector=[0.1, 0.2, 0.3, 0.4])
+        results = await service.search(query="test query", query_vector=[0.1, 0.2, 0.3, 0.4])
 
         assert mock_client.query_points.await_count == 2
         assert results == []
-
-
-# ---------------------------------------------------------------------------
-# ping() and /health endpoint
-# ---------------------------------------------------------------------------
 
 
 class TestQdrantPing:
@@ -570,6 +571,7 @@ class TestQdrantPing:
             mock_config.QDRANT_COLLECTION_NAME = "test_collection"
             mock_config.QDRANT_CLUSTER_ENDPOINT = "http://localhost:6333"
             mock_config.QDRANT_API_KEY = "key"
+            mock_config.QDRANT_SPARSE_MODEL = "test-model"
             mock_qdrant = AsyncMock()
             mock_cls.return_value = mock_qdrant
             yield mock_qdrant
@@ -677,9 +679,6 @@ class TestHealthEndpoint:
 
         assert resp.status_code == 503
         assert resp.json()["status"] == "degraded"
-
-
-# Token-budget guard  (_build_context relevance-sort + token trim)
 
 
 class TestTokenBudgetGuard:
