@@ -88,6 +88,79 @@ class TestBaseLLMInterface:
         assert callable(llm.complete)
 
 
+class TestBaseLLMComplete:
+    """Verify BaseLLM.complete() retry behaviour for transient vs non-transient errors."""
+
+    def _make_llm(self, impl_side_effect, max_retries: int = 2):
+        """Build a concrete BaseLLM whose _complete_impl raises the given side_effect."""
+
+        class FakeLLM(BaseLLM):
+            async def _complete_impl(self, prompt: str, max_token: int, **kwargs) -> LLMResponse:
+                raise impl_side_effect
+
+            @property
+            def model_name(self) -> str:
+                return "fake-model"
+
+        return FakeLLM(timeout_seconds=5, max_retries=max_retries)
+
+    @pytest.mark.asyncio
+    async def test_invalid_argument_fails_immediately(self):
+        """400 InvalidArgument must raise LLMContentError on the first attempt — no retries."""
+        from google.api_core.exceptions import InvalidArgument
+
+        llm = self._make_llm(InvalidArgument("Invalid generation config"))
+
+        with patch("src.common.llm.base.asyncio.sleep") as mock_sleep:
+            with pytest.raises(LLMContentError, match="Invalid generation config"):
+                await llm.complete("some prompt")
+
+        # sleep should never be called — we fast-failed without sleeping
+        mock_sleep.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_permission_denied_fails_immediately(self):
+        """403 PermissionDenied (wrong API key) must raise LLMContentError immediately."""
+        from google.api_core.exceptions import PermissionDenied
+
+        llm = self._make_llm(PermissionDenied("API key does not have permission"))
+
+        with patch("src.common.llm.base.asyncio.sleep") as mock_sleep:
+            with pytest.raises(LLMContentError, match="API key does not have permission"):
+                await llm.complete("some prompt")
+
+        mock_sleep.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unauthenticated_fails_immediately(self):
+        """401 Unauthenticated must raise LLMContentError immediately."""
+        from google.api_core.exceptions import Unauthenticated
+
+        llm = self._make_llm(Unauthenticated("Invalid API key"))
+
+        with patch("src.common.llm.base.asyncio.sleep") as mock_sleep:
+            with pytest.raises(LLMContentError, match="Invalid API key"):
+                await llm.complete("some prompt")
+
+        mock_sleep.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_service_unavailable_is_retried(self):
+        """503 ServiceUnavailable is transient and should be retried (sleep called)."""
+        from unittest.mock import AsyncMock
+
+        from google.api_core.exceptions import ServiceUnavailable
+
+        llm = self._make_llm(ServiceUnavailable("overloaded"), max_retries=1)
+
+        with patch("src.common.llm.base.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            with pytest.raises(LLMContentError):
+                await llm.complete("some prompt")
+
+        # With max_retries=1 we expect one sleep between attempt 0 and attempt 1
+        assert mock_sleep.call_count == 1
+
+
 # GeminiClient
 
 

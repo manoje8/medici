@@ -4,6 +4,8 @@ import re
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
 
+from google.api_core import exceptions as _gexc
+
 
 class LLMParseError(Exception):
     def __init__(self, raw_text: str, original_error: Exception):
@@ -24,6 +26,20 @@ class LLMContentError(Exception):
         self.reason = reason
         self.details = details or {}
         super().__init__(f"LLM content error: {reason}")
+
+
+# Exceptions that will NEVER succeed on retry — fail fast without burning the
+# retry budget or adding unnecessary backoff latency.
+#
+# Transient errors (5xx server faults, 429 rate-limit, asyncio.TimeoutError)
+# are intentionally excluded so they continue to be retried.
+_NON_RETRYABLE_LLM_EXCEPTIONS = (
+    _gexc.InvalidArgument,  # 400 – malformed prompt or generation config
+    _gexc.PermissionDenied,  # 403 – quota exceeded or API key lacks access
+    _gexc.Unauthenticated,  # 401 – invalid/missing API key
+    _gexc.NotFound,  # 404 – model name does not exist
+    LLMParseError,  # deterministic parse failure — same output every time
+)
 
 
 class LLMRequestContext:
@@ -127,12 +143,17 @@ class BaseLLM(ABC):
 
                 await asyncio.sleep(2**attempt)
             except Exception as e:
+                if isinstance(e, _NON_RETRYABLE_LLM_EXCEPTIONS):
+                    raise LLMContentError(
+                        reason=str(e),
+                        details=None,
+                    ) from e
                 if attempt == self.max_retries:
                     raise LLMContentError(
                         reason=str(e),
                         details=None,
                     ) from e
-                await asyncio.sleep(1)
+                await asyncio.sleep(2**attempt)
 
         raise RuntimeError("Unexpected failure in LLM request")
 

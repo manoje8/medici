@@ -344,12 +344,16 @@ class TestQdrantStorageService:
 
     @pytest.mark.asyncio
     async def test_upsert_propagates_exception(self, service, mock_client, make_embedded_chunk):
-        """After all retries are exhausted the original exception is re-raised."""
+        """After all retries are exhausted the original exception is re-raised.
+
+        Uses OSError (a genuine transient network error) so the retry policy
+        correctly attempts 3 times before propagating.
+        """
         mock_client.collection_exists.return_value = False
-        mock_client.upsert.side_effect = RuntimeError("Connection failed")
+        mock_client.upsert.side_effect = OSError("Connection reset by peer")
 
         chunks = [make_embedded_chunk()]
-        with pytest.raises(RuntimeError, match="Connection failed"):
+        with pytest.raises(OSError, match="Connection reset by peer"):
             await service.upsert_embedded_chunks(chunks)
 
         # tenacity retries 3 times total before re-raising
@@ -556,6 +560,60 @@ class TestQdrantRetry:
 
         assert mock_client.query_points.await_count == 2
         assert results == []
+
+    @pytest.mark.asyncio
+    async def test_non_transient_4xx_is_not_retried(self, service, mock_client):
+        """A 4xx UnexpectedResponse (e.g. 400 bad filter) must NOT be retried.
+
+        The retry predicate must fast-fail immediately so we waste neither
+        retry budget nor backoff time on errors that will never self-heal.
+        """
+        from qdrant_client.http.exceptions import UnexpectedResponse
+
+        bad_request = UnexpectedResponse(
+            status_code=400,
+            reason_phrase="Bad Request",
+            content=b'{"status": {"error": "Wrong filter"}}',
+            headers={},
+        )
+        mock_client.query_points.side_effect = bad_request
+
+        with pytest.raises(UnexpectedResponse):
+            await service.search(query="test query", query_vector=[0.1, 0.2, 0.3, 0.4])
+
+        # Called exactly once — no retries burned on a permanent client error.
+        assert mock_client.query_points.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_5xx_unexpected_response_is_retried(self, service, mock_client):
+        """A 5xx UnexpectedResponse is treated as transient and retried 3 times."""
+        from qdrant_client.http.exceptions import UnexpectedResponse
+
+        server_error = UnexpectedResponse(
+            status_code=503,
+            reason_phrase="Service Unavailable",
+            content=b"overloaded",
+            headers={},
+        )
+        mock_client.query_points.side_effect = server_error
+
+        with pytest.raises(UnexpectedResponse):
+            await service.search(query="test query", query_vector=[0.1, 0.2, 0.3, 0.4])
+
+        assert mock_client.query_points.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_response_handling_exception_is_retried(self, service, mock_client):
+        """ResponseHandlingException (transport-level) is always retried."""
+        from qdrant_client.http.exceptions import ResponseHandlingException
+
+        transport_err = ResponseHandlingException(Exception("Connection refused"))
+        mock_client.query_points.side_effect = transport_err
+
+        with pytest.raises(ResponseHandlingException):
+            await service.search(query="test query", query_vector=[0.1, 0.2, 0.3, 0.4])
+
+        assert mock_client.query_points.await_count == 3
 
 
 class TestQdrantPing:

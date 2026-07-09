@@ -4,6 +4,7 @@ from functools import partial
 
 import logfire
 from qdrant_client import AsyncQdrantClient
+from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 from qdrant_client.http.models import (
     Distance,
     Document,
@@ -21,7 +22,7 @@ from qdrant_client.http.models import (
 from tenacity import (
     AsyncRetrying,
     before_sleep_log,
-    retry_if_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential_jitter,
 )
@@ -32,8 +33,31 @@ from src.ingestion.embedding import EmbeddedChunk
 _logger = logging.getLogger(__name__)
 
 
+def _is_qdrant_transient(exc: BaseException) -> bool:
+    """
+    Return True only for errors that are worth retrying.
+
+    - ResponseHandlingException: transport-level failures (connection refused,
+      read timeout, DNS resolution error).
+    - UnexpectedResponse with status_code >= 500: server-side fault (5xx)
+      that may resolve on the next attempt.
+    - OSError / subclasses: low-level network resets (ConnectionResetError,
+      BrokenPipeError, etc.) that are inherently transient.
+
+    4xx responses (bad auth, malformed filter, model not found) are NOT retried
+    because they represent a client-side bug that will never self-heal.
+    """
+    if isinstance(exc, ResponseHandlingException):
+        return True
+    if isinstance(exc, UnexpectedResponse):
+        return exc.status_code is not None and exc.status_code >= 500
+    if isinstance(exc, OSError):
+        return True
+    return False
+
+
 _QDRANT_RETRY_POLICY = dict(
-    retry=retry_if_exception_type(Exception),
+    retry=retry_if_exception(_is_qdrant_transient),
     stop=stop_after_attempt(3),
     wait=wait_exponential_jitter(initial=1, max=10, jitter=1),
     before_sleep=before_sleep_log(_logger, logging.WARNING),
