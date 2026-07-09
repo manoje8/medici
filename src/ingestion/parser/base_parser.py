@@ -98,8 +98,8 @@ class Parser:
         rows = []
         headers = [th.get_text(strip=True) for th in table_tag.find_all("th")]
 
-        for _row in table_tag.find_all("tr"):
-            cells = [td.get_text(strip=True) for td in table_tag.find_all("td")]
+        for row in table_tag.find_all("tr"):
+            cells = [td.get_text(strip=True) for td in row.find_all("td")]
 
             if not cells:
                 continue

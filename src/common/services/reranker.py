@@ -11,23 +11,23 @@ class Reranker:
         if self._ranker is None:
             logfire.info(
                 "initializing_reranker_model",
-                cache_dir="/tmp/flashrank",
+                cache_dir="/flashrank",
                 top_k=self.top_k,
             )
             try:
                 with logfire.span("ranker_model_loading"):
-                    self._ranker = Ranker(cache_dir="/tmp/flashrank")
+                    self._ranker = Ranker(cache_dir="/flashrank")
                     logfire.info(
                         "reranker_model_loaded_successfully",
                         model_type=type(self._ranker).__name__,
-                        cache_dir="/tmp/flashrank",
+                        cache_dir="/flashrank",
                     )
             except Exception as e:
                 logfire.warning(
                     "reranker_model_loading_fallback",
                     error=str(e),
                     error_type=type(e).__name__,
-                    cache_dir="/tmp/flashrank",
+                    cache_dir="/flashrank",
                     using_fallback=True,
                 )
                 self._ranker = Ranker()
@@ -52,7 +52,7 @@ class Reranker:
             with logfire.span("reranking_operation", query=query, num_candiates=len(candidates)):
                 ranker = self._get_ranker()
 
-                text_to_chunk: dict[str, dict] = {c["text"]: c for c in candidates}
+                id_to_chunk: dict[int, dict] = {i: c for i, c in enumerate(candidates)}
 
                 pairs = [{"id": i, "text": chunk["text"]} for i, chunk in enumerate(candidates)]
                 request = RerankRequest(query=query, passages=pairs)
@@ -69,8 +69,8 @@ class Reranker:
                 with logfire.span("rerank_result_merging"):
                     merged = []
                     for result in reranked[: self.top_k]:
-                        text = result.get("text", "")
-                        original = text_to_chunk.get(text)
+                        result_id = result.get("id")
+                        original = id_to_chunk.get(result_id)
                         if original:
                             chunk = dict(original)
                             score = result.get("score", original.get("score", 0.0))
@@ -79,8 +79,8 @@ class Reranker:
                         else:
                             logfire.warning(
                                 "rerank_result_mismatch",
-                                text_preview=(text[:50] + "..." if len(text) > 50 else text),
-                                reason="Text from reranker not found in original candidates",
+                                result_id=result_id,
+                                reason="ID from reranker not found in original candidates",
                             )
 
                 if merged:
