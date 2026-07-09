@@ -3,6 +3,7 @@ import hashlib
 import json
 import time
 from pathlib import Path
+from typing import Any
 
 import logfire
 from tqdm import tqdm
@@ -21,7 +22,8 @@ from src.common.utils.constants import (
 )
 from src.common.utils.doc_cache import DocumentCache
 from src.common.utils.helper import separate_content, supported_extensions_list
-from src.ingestion.chunking.chunk import BatchProcess
+from src.common.utils.tokenizer import TikTokenTokenizer, Tokenizer
+from src.ingestion.chunking.chunk import BatchProcess, build_parent_child_chunk
 from src.ingestion.chunking.chunker_factory import create_chunker
 from src.ingestion.chunking.chunking_config import ChunkingConfig
 from src.ingestion.embedding import EmbeddingService
@@ -30,7 +32,9 @@ from src.ingestion.parser.google_doc_ai import GoogleDocAI
 
 
 class Processor:
-    def __init__(self, cache_dir: str | None = None, max_concurrency: int = 4):
+    def __init__(
+        self, tokenizer: Tokenizer, cache_dir: str | None = None, max_concurrency: int = 4
+    ):
         self.embedding_service = EmbeddingService(
             model_name=config.EMBEDDING_MODEL_NAME,
             dimensions=config.EMBEDDING_DIMENSIONS,
@@ -47,6 +51,7 @@ class Processor:
         )
 
         self.sparse_index = SparseSearchIndex()
+        self.tokenizer = tokenizer or TikTokenTokenizer(model_name="gpt-4o-mini")
 
         local_config = {
             "type": StorageType.LOCAL.value,
@@ -157,6 +162,7 @@ class Processor:
         self,
         file_path: Path,
         content_list: str,
+        multimodal_items: list[dict[str, Any]],
         doc_id: str,
         parse_method: ParseMethod,
         split_by_character: str | None = None,
@@ -164,18 +170,30 @@ class Processor:
         chunking_strategy = self._select_chunking_strategy(file_path)
         logfire.info(f"Starting chunking with strategy: {chunking_strategy} - {parse_method}")
 
-        chunking_config = ChunkingConfig(type=chunking_strategy, size=512, overlap=64)
+        chunking_config = ChunkingConfig(
+            type=chunking_strategy, size=config.CHUNK_SIZE, overlap=config.CHUNK_OVERLAP
+        )
 
         chunker = create_chunker(chunking_config)
-        chunks = chunker.chunk(content_list)
+        text_chunks = chunker.chunk(content_list)
+
+        if multimodal_items:
+            multimodal_chunks = chunker.chunk_multimodal_items(
+                multimodal_items,
+                doc_id=doc_id,
+                source_file=str(file_path),
+                start_index=len(text_chunks),
+            )
+            chunks = text_chunks + multimodal_chunks
+        else:
+            chunks = text_chunks
 
         logfire.info(
             f"Chunking complete: {len(chunks)} chunks produced from {len(content_list)} blocks"
         )
 
-        # TODO: Update parent child chunking
-        # enriched = chunking.build_parent_child_chunk(chunks)
-        # logfire.info(f"Build parent child chunk: {len(enriched)}")
+        enriched = build_parent_child_chunk(chunks, self.tokenizer)
+        logfire.info(f"Build parent child chunk: {len(enriched)}")
 
         return chunks
 
@@ -386,6 +404,7 @@ class Processor:
         doc_id: str | None = None,
         split_by_character: str = "\n\n",
     ):
+        multimodal_items = None
         file_path = Path(file_path)
 
         if not file_path.exists():
@@ -402,7 +421,9 @@ class Processor:
         if parse_method == ParseMethod.DOCLING:
             content_list, multimodal_items = separate_content(content_list)
 
-        return await self._chunk_embed_store(file_path, content_list, doc_id, parse_method)
+        return await self._chunk_embed_store(
+            file_path, content_list, multimodal_items, doc_id, parse_method
+        )
 
     async def ingest_documents(
         self,
@@ -420,7 +441,7 @@ class Processor:
             file_paths=file_paths, parse_method=parse_method, recursive=recursive
         )
         logfire.info(batch_result.summary())
-
+        multimodal_items = None
         results = {}
         for file_path, (content_list, doc_id) in parsed.items():
             path = Path(file_path)
@@ -428,7 +449,7 @@ class Processor:
                 content_list, multimodal_items = separate_content(content_list)
             try:
                 results[file_path] = await self._chunk_embed_store(
-                    path, content_list, doc_id, parse_method
+                    path, content_list, multimodal_items, doc_id, parse_method
                 )
             except Exception as e:
                 logfire.error(f"Failed to chunk/embed/store {file_path}: {str(e)}")
@@ -438,11 +459,17 @@ class Processor:
         return {"batch": batch_result, "results": results}
 
     async def _chunk_embed_store(
-        self, file_path: Path, content_list, doc_id: str, parse_method: ParseMethod
+        self,
+        file_path: Path,
+        content_list,
+        multimodal_items: list[dict[str, Any]],
+        doc_id: str,
+        parse_method: ParseMethod,
     ) -> dict:
         chunks = await self._chunk_doc_content(
             file_path=file_path,
             content_list=content_list,
+            multimodal_items=multimodal_items,
             doc_id=doc_id,
             parse_method=parse_method,
         )

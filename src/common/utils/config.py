@@ -65,14 +65,17 @@ class Config:
 
     # Docling
     TABLE_MODE = os.getenv("TABLE_MODE", "fast")
-    DO_TABLES = os.getenv("DO_TABLES", False)
-    DO_OCR = os.getenv("DO_OCR", False)
+    DO_TABLES: bool = bool(os.getenv("DO_TABLES", False))
+    DO_OCR: bool = bool(os.getenv("DO_OCR", False))
 
     REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
     POSTGRES_CONN_STRING = os.getenv("POSTGRES_CONN_STRING")
 
-    STORAGE_TYPE: str = "local"
-    STORAGE_BASE_DIR: str = "./data"
+    STORAGE_TYPE: str = os.getenv("STORAGE_TYPE", "local")
+    STORAGE_BASE_DIR: str = os.getenv("STORAGE_BASE_DIR", "./data")
+
+    CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", 512))
+    CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", 64))
 
 
 config = Config()

@@ -72,14 +72,14 @@ class DoclingParser(Parser):
                     logfire.debug(f"Could not set TableFormer mode '{table_mode}': {e}")
 
             # Only generate images if OCR or image extraction is needed
-            generate_images = getattr(config, "GENERATE_IMAGES", False)
+            generate_images = getattr(config, "GENERATE_IMAGES", True)
 
             if hasattr(pipeline_options, "generate_picture_images"):
                 pipeline_options.generate_picture_images = generate_images
 
             if hasattr(pipeline_options, "images_scale"):
                 pipeline_options.images_scale = (
-                    1.0 if not generate_images else getattr(config, "IMAGES_SCALE", 1.0)
+                    1.0 if not generate_images else getattr(config, "IMAGES_SCALE", 2.0)
                 )
 
             converter = DocumentConverter(

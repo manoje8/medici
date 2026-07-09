@@ -13,7 +13,8 @@ Covers:
 import pytest
 
 from src.common.utils.constants import ChunkerStrategy
-from src.ingestion.chunking.chunk import Chunk, Chunking
+from src.common.utils.tokenizer import TikTokenTokenizer, Tokenizer
+from src.ingestion.chunking.chunk import Chunk, Chunking, build_parent_child_chunk
 from src.ingestion.chunking.chunker_factory import create_chunker
 from src.ingestion.chunking.chunking_config import ChunkingConfig
 from src.ingestion.chunking.fixed_window import FixedWindow
@@ -24,6 +25,11 @@ from src.ingestion.chunking.recursive_character import RecursiveCharacterChunker
 def chunker():
     """Return a fresh Chunking instance."""
     return Chunking()
+
+
+@pytest.fixture
+def tokenizer() -> Tokenizer:
+    return TikTokenTokenizer()
 
 
 def make_block(text: str, block_type: str = "paragraph") -> dict:
@@ -271,63 +277,63 @@ class TestChunkerFactory:
 
 
 class TestBuildParentChildChunk:
-    def test_returns_list_of_same_length(self, chunker):
+    def test_returns_list_of_same_length(self, tokenizer):
         chunks = make_chunks(5)
-        result = chunker.build_parent_child_chunk(chunks)
+        result = build_parent_child_chunk(chunks, tokenizer)
         assert len(result) == len(chunks)
 
-    def test_returns_chunk_objects(self, chunker):
+    def test_returns_chunk_objects(self, tokenizer):
         chunks = make_chunks(3)
-        result = chunker.build_parent_child_chunk(chunks)
+        result = build_parent_child_chunk(chunks, tokenizer)
         assert all(isinstance(c, Chunk) for c in result)
 
-    def test_child_text_preserved(self, chunker):
+    def test_child_text_preserved(self, tokenizer):
         chunks = make_chunks(3)
-        result = chunker.build_parent_child_chunk(chunks)
+        result = build_parent_child_chunk(chunks, tokenizer)
         for original, enriched in zip(chunks, result, strict=False):
             assert enriched.text == original.text
 
-    def test_parent_text_non_empty(self, chunker):
+    def test_parent_text_non_empty(self, tokenizer):
         chunks = make_chunks(5)
-        result = chunker.build_parent_child_chunk(chunks)
+        result = build_parent_child_chunk(chunks, tokenizer)
         for c in result:
             assert c.parent_text != ""
 
-    def test_parent_window_start_gte_zero(self, chunker):
+    def test_parent_window_start_gte_zero(self, tokenizer):
         chunks = make_chunks(5)
-        result = chunker.build_parent_child_chunk(chunks)
+        result = build_parent_child_chunk(chunks, tokenizer)
         for c in result:
             assert c.parent_window_start >= 0
 
-    def test_parent_window_end_lte_total(self, chunker):
+    def test_parent_window_end_lte_total(self, tokenizer):
         n = 5
         chunks = make_chunks(n)
-        result = chunker.build_parent_child_chunk(chunks)
+        result = build_parent_child_chunk(chunks, tokenizer)
         for c in result:
             assert c.parent_window_end <= n
 
-    def test_parent_window_start_lte_end(self, chunker):
+    def test_parent_window_start_lte_end(self, tokenizer):
         chunks = make_chunks(5)
-        result = chunker.build_parent_child_chunk(chunks)
+        result = build_parent_child_chunk(chunks, tokenizer)
         for c in result:
             assert c.parent_window_start <= c.parent_window_end
 
-    def test_single_chunk(self, chunker):
+    def test_single_chunk(self, tokenizer):
         chunks = make_chunks(1)
-        result = chunker.build_parent_child_chunk(chunks)
+        result = build_parent_child_chunk(chunks, tokenizer)
         assert len(result) == 1
         assert result[0].text == chunks[0].text
 
-    def test_custom_parent_window(self, chunker):
+    def test_custom_parent_window(self, tokenizer):
         chunks = make_chunks(10)
-        result = chunker.build_parent_child_chunk(chunks, parent_window=6)
+        result = build_parent_child_chunk(chunks, tokenizer, parent_window=6)
         for c in result:
             window_size = c.parent_window_end - c.parent_window_start
             assert window_size <= 7  # at most parent_window+1
 
-    def test_metadata_preserved(self, chunker):
+    def test_metadata_preserved(self, tokenizer):
         chunks = make_chunks(3)
-        result = chunker.build_parent_child_chunk(chunks)
+        result = build_parent_child_chunk(chunks, tokenizer)
         for original, enriched in zip(chunks, result, strict=False):
             assert enriched.doc_id == original.doc_id
             assert enriched.source_file == original.source_file
@@ -335,19 +341,19 @@ class TestBuildParentChildChunk:
             assert enriched.chunk_type == original.chunk_type
             assert enriched.section_title == original.section_title
 
-    def test_empty_list_returns_empty(self, chunker):
-        result = chunker.build_parent_child_chunk([])
+    def test_empty_list_returns_empty(self, tokenizer):
+        result = build_parent_child_chunk([], tokenizer)
         assert result == []
 
-    def test_parent_window_boundary_first_chunk(self, chunker):
+    def test_parent_window_boundary_first_chunk(self, tokenizer):
         """First chunk cannot look behind; start should be 0."""
         chunks = make_chunks(5)
-        result = chunker.build_parent_child_chunk(chunks, parent_window=4)
+        result = build_parent_child_chunk(chunks, tokenizer, parent_window=4)
         assert result[0].parent_window_start == 0
 
-    def test_parent_window_boundary_last_chunk(self, chunker):
+    def test_parent_window_boundary_last_chunk(self, tokenizer):
         """Last chunk cannot look ahead; end should be len(chunks)."""
         n = 5
         chunks = make_chunks(n)
-        result = chunker.build_parent_child_chunk(chunks, parent_window=4)
+        result = build_parent_child_chunk(chunks, tokenizer, parent_window=4)
         assert result[-1].parent_window_end == n

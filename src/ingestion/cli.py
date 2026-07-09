@@ -5,6 +5,7 @@ from pathlib import Path
 
 import logfire
 
+from src.common.utils.tokenizer import TikTokenTokenizer
 from src.ingestion.processor import Processor
 
 
@@ -71,7 +72,8 @@ def parse_args():
 async def main():
     logfire.configure(service_name="PROCESS CLI")
     args = parse_args()
-    processor = Processor()
+    tokenizer = TikTokenTokenizer()
+    processor = Processor(tokenizer)
 
     if args.command == "parse":
         output_dir = str(Path(args.output_dir)) if args.output_dir else None

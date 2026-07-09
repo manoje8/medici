@@ -13,4 +13,10 @@ class Chunker(ABC):
 
     @abstractmethod
     def chunk(self, text: str, **kwargs) -> list[Chunk]:
-        """hunk method definition."""
+        """Chunk method definition."""
+
+    @abstractmethod
+    def chunk_multimodal_items(
+        self, items: list[dict[str, Any]], doc_id: str, source_file: str, start_index: int
+    ):
+        """Multimodal items definition"""

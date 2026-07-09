@@ -42,7 +42,7 @@ class GraphPipeline:
 
         return {
             "answer": result["final_answer"],
-            "session_id": session_id,
+            "session_id": session.session_id,
             "sources": result["sources"],
             "query_was_rewritten": result["was_rewritten"],
             "retrieval_rounds": result["retrieval_round"],

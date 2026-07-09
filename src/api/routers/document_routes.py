@@ -8,6 +8,7 @@ from src.api.config_api import config_api
 from src.api.constants_api import ALLOWED_CONTENT_TYPES
 from src.common.utils.constants import ParseMethod
 from src.common.utils.helper import supported_extensions_list
+from src.common.utils.tokenizer import TikTokenTokenizer
 from src.ingestion.processor import Processor
 
 INGESTION_ROOT = Path(config_api.INGESTION_ROOT).resolve()
@@ -23,7 +24,8 @@ class IngestionRequest(BaseModel):
 def create_document_routes():
     router = APIRouter(tags=["document"])
 
-    processor = Processor()
+    tokenizer = TikTokenTokenizer()
+    processor = Processor(tokenizer)
 
     @router.post("/ingestion")
     async def ingestion(
