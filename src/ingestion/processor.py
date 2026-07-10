@@ -118,19 +118,30 @@ class Processor:
         else:
             return ChunkerStrategy.FIXED
 
+    @staticmethod
+    def _hash_file_content(file_path: Path) -> str:
+        """
+        Return a BLAKE2b-256 hex digest of *file_path*'s full byte content.
+        """
+        hasher = hashlib.blake2b(digest_size=32)
+        with open(file_path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(65_536), b""):
+                hasher.update(chunk)
+        return hasher.hexdigest()
+
     def _generate_cache_key(self, file_path: Path, parse_method: str) -> str:
-        mtime = file_path.stat().st_mtime
+        """
+        Build a cache key from the file's *content* hash + parse method.
+        """
+        content_hash = self._hash_file_content(file_path)
 
         config_dict = {
-            "file_path": str(file_path),
-            "mtime": mtime,
+            "content_hash": content_hash,
             "parse_method": parse_method,
         }
 
         config_str = json.dumps(config_dict, sort_keys=True)
-        cache_key = hashlib.md5(config_str.encode()).hexdigest()
-
-        return cache_key
+        return hashlib.sha256(config_str.encode()).hexdigest()
 
     def _get_cached_result(self, cache_key: str, file_path: Path, parse_method: str):
         return self._cache.get(cache_key)

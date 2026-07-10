@@ -1,4 +1,5 @@
 import gzip
+import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,6 +28,18 @@ class DocumentCache:
 
         return {}
 
+    @staticmethod
+    def _hash_file_content(file_path: Path) -> str:
+        """
+        Return a BLAKE2b-256 hex digest of the full file bytes.
+        Chunked reads keep memory usage constant regardless of file size.
+        """
+        hasher = hashlib.blake2b(digest_size=32)
+        with open(file_path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(65_536), b""):
+                hasher.update(chunk)
+        return hasher.hexdigest()
+
     def _evict(self, cache_key: str) -> None:
         entry = self._manifest.pop(cache_key, None)
 
@@ -52,15 +65,51 @@ class DocumentCache:
             self._evict(cache_key)
             return None
 
+        stored_hash = entry.get("content_hash")
+        stored_size = entry.get("file_size")
+        source_path = Path(entry["source_file"])
+
+        if stored_hash is None or stored_size is None:
+            logfire.warning(
+                f"Cache - Entry {cache_key[:8]}\u2026 missing fingerprint fields, evicting "
+                f"(written before staleness-guard was added)"
+            )
+            self._evict(cache_key)
+            return None
+
+        try:
+            current_size = source_path.stat().st_size
+        except OSError:
+            logfire.warning(f"Cache - Source file gone for {cache_key[:8]}\u2026, evicting")
+            self._evict(cache_key)
+            return None
+
+        if current_size != stored_size:
+            logfire.warning(
+                f"Cache STALE (size changed) - key={cache_key[:8]}\u2026 "
+                f"file={entry['source_file']}"
+            )
+            self._evict(cache_key)
+            return None
+
+        current_hash = self._hash_file_content(source_path)
+        if current_hash != stored_hash:
+            logfire.warning(
+                f"Cache STALE (content changed, mtime preserved) - key={cache_key[:8]}\u2026 "
+                f"file={entry['source_file']}"
+            )
+            self._evict(cache_key)
+            return None
+
         try:
             with gzip.open(cache_file, "rt", encoding="utf-8") as f:
                 content_list = json.load(f)
 
-            logfire.info(f"Cache HIT - key={cache_key[:8]}… file={entry['source_file']}")
+            logfire.info(f"Cache HIT - key={cache_key[:8]}\u2026 file={entry['source_file']}")
             return content_list
 
         except (OSError, json.JSONDecodeError) as e:
-            logfire.warning(f"Cache - Corrupted entry {cache_key[:8]}…, evicting. Error: {e}")
+            logfire.warning(f"Cache - Corrupted entry {cache_key[:8]}\u2026, evicting. Error: {e}")
             self._evict(cache_key)
             return None
 
@@ -72,6 +121,7 @@ class DocumentCache:
         parse_method: str,
         parser: str = "auto",
     ):
+        file_path = Path(file_path)
         filename = f"{cache_key}.json.gz"
         cache_file = self.cache_dir / filename
 
@@ -83,6 +133,9 @@ class DocumentCache:
             logfire.error(f"Cache - Failed to write {cache_file}: {e}")
             return
 
+        content_hash = self._hash_file_content(file_path)
+        file_size = file_path.stat().st_size
+
         self._manifest[cache_key] = {
             "filename": filename,
             "source_file": str(file_path),
@@ -90,10 +143,12 @@ class DocumentCache:
             "parser": parser,
             "block_count": len(content_list),
             "cached_at": datetime.now(timezone.utc).isoformat(),
+            "content_hash": content_hash,
+            "file_size": file_size,
         }
 
         self._save_manifest()
-        logfire.info(f"Cache STORE - key={cache_key[:8]}… blocks={len(content_list)}")
+        logfire.info(f"Cache STORE - key={cache_key[:8]}\u2026 blocks={len(content_list)}")
 
     def invalidate(self, file_path: str | Path) -> int:
         """
