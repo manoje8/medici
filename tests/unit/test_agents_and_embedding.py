@@ -524,43 +524,64 @@ class TestSynthesizerAgent:
     def synthesizer(self, mock_llm):
         return SynthesizerAgent(llm_client=mock_llm)
 
-    # @pytest.mark.asyncio
-    # async def test_synthesize_from_docs(self, synthesizer, mock_llm):
-    #     state = {
-    #         "question_category": "factual",
-    #         "retrieval_history": [],
-    #         "accepted_chunks": [
-    #             {
-    #                 "source": "doc1.pdf",
-    #                 "section": "Intro",
-    #                 "text": "Google was founded in 1998.",
-    #             }
-    #         ],
-    #         "conversation_history": "",
-    #         "original_message": "When was Google founded?",
-    #         "effective_query": "When was Google founded?",
-    #     }
-    #     res = await synthesizer.synthesize(state)
-    #     assert res == "Mocked answer"
-    #     prompt = mock_llm.complete.call_args[0][0]
-    #     assert "Google was founded in 1998." in prompt
-    #     assert "Document Context:" in prompt
+    @pytest.mark.asyncio
+    async def test_synthesize_from_docs(self, synthesizer, mock_llm):
+        """
+        When accepted_chunks are present and question_category is 'factual',
+        synthesize() must call the LLM and include chunk text in the prompt.
 
-    # @pytest.mark.asyncio
-    # async def test_synthesize_from_conversation_fallback(self, synthesizer, mock_llm):
-    #     state = {
-    #         "question_category": "factual",
-    #         "retrieval_history": [],
-    #         "accepted_chunks": [],
-    #         "conversation_history": "User: I am testing the code\nAssistant: Great!",
-    #         "original_message": "what was I doing?",
-    #         "effective_query": "what was I doing?",
-    #     }
-    #     res = await synthesizer.synthesize(state)
-    #     assert res == "Mocked answer"
-    #     prompt = mock_llm.complete.call_args[0][0]
-    #     assert "I am testing the code" in prompt
-    #     assert "USER'S QUESTION:" in prompt
+        Previously disabled because the state shape was stale. Fixed:
+        - Removed 'conversation_history' (not a state key in current impl)
+        - Added 'relevance_score' to chunk so _build_context() can sort it
+        - 'section' key is used by _build_context for '[Source: … | Section: …]'
+        """
+        state = {
+            "question_category": "factual",
+            "retrieval_history": [],
+            "accepted_chunks": [
+                {
+                    "source": "doc1.pdf",
+                    "section": "Intro",
+                    "text": "Google was founded in 1998.",
+                    "relevance_score": 0.9,
+                }
+            ],
+            "original_message": "When was Google founded?",
+            "effective_query": "When was Google founded?",
+        }
+        res = await synthesizer.synthesize(state)
+        # _ensure_citations() may append a "Sources Used" footer when the mock
+        # response has no inline [citation] brackets — check prefix, not equality.
+        assert res.startswith("Mocked answer")
+        prompt = mock_llm.complete.call_args[0][0]
+        assert "Google was founded in 1998." in prompt
+
+    @pytest.mark.asyncio
+    async def test_synthesize_chitchat_uses_question(self, synthesizer, mock_llm):
+        """
+        Replaces the removed 'conversation_fallback' test.
+
+        The original test exercised a conversation-history path that was
+        refactored away. The current code routes 'chitchat' questions to
+        _synthesize_chitchat() which calls the LLM with the user's message.
+
+        Verifies:
+        - question_category='chitchat' routes to _synthesize_chitchat()
+        - The LLM is called exactly once
+        - The return value is the LLM's response text
+        """
+        state = {
+            "question_category": "chitchat",
+            "retrieval_history": [],
+            "accepted_chunks": [],
+            "original_message": "How are you today?",
+            "effective_query": "How are you today?",
+        }
+        res = await synthesizer.synthesize(state)
+        assert res == "Mocked answer"
+        mock_llm.complete.assert_awaited_once()
+        prompt = mock_llm.complete.call_args[0][0]
+        assert "How are you today?" in prompt
 
     @pytest.mark.asyncio
     async def test_synthesize_insufficient_info(self, synthesizer, mock_llm):

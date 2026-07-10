@@ -15,10 +15,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: "3.11"
+  PYTHON_VERSION: "3.12"
 
 jobs:
-  # Job 1: Lint & Format
   lint:
     name: Lint & Format Check
     runs-on: ubuntu-latest
@@ -41,8 +40,10 @@ jobs:
       - name: Run Ruff (linter)
         run: ruff check . --output-format=github
 
+      - name: Run Ruff (format check)
+        run: ruff format --check .
 
-  # Job 2: Unit Tests
+
   test:
     name: Unit Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -51,7 +52,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11"]
+        python-version: ["3.12"]
 
     steps:
       - name: Checkout code
@@ -66,8 +67,9 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install pytest pytest-cov pytest-asyncio
           pip install \
+            pytest pytest-cov pytest-asyncio anyio \
+            httpx \
             pydantic>=2.0.0 \
             python-dotenv \
             loguru \
@@ -83,10 +85,38 @@ jobs:
             google-cloud-storage \
             flashrank \
             langchain-text-splitters \
-            fastapi
+            fastapi \
+            uvicorn[standard] \
+            tenacity \
+            redis \
+            langgraph \
+            langchain \
+            psycopg[binary] \
+            psycopg-pool \
+            groq
 
       - name: Install project in editable mode
         run: pip install -e .
+
+      - name: Create minimal .env for CI
+        run: |
+          cat > .env <<'EOF'
+          PROJECT_NAME=studious-ci
+          PORT=8000
+          HOST=localhost
+          CORS_ORIGINS=*
+          REDIS_URL=redis://localhost:6379
+          QDRANT_COLLECTION_NAME=rag_docs
+          EMBEDDING_DIMENSIONS=256
+          EMBEDDING_BATCH_SIZE=10
+          CHUNK_SIZE=512
+          CHUNK_OVERLAP=64
+          MODEL_CONTEXT_LIMIT=128000
+          MAX_OUTPUT_TOKENS=2048
+          MAX_PROMPT_OVERHEAD_TOKENS=1024
+          MAX_QUERY_INPUT_TOKENS=512
+          MAX_CONTEXT_CHARS=100000
+          EOF
 
       - name: Run unit tests
         run: |
@@ -99,13 +129,88 @@ jobs:
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
-        if: matrix.python-version == '3.11'
+        if: matrix.python-version == '3.12'
         with:
           name: coverage-report
           path: coverage.xml
           retention-days: 7
 
-  # Job 3: Security Scan (dependency audit)
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install \
+            pytest pytest-asyncio anyio \
+            httpx \
+            pydantic>=2.0.0 \
+            python-dotenv \
+            loguru \
+            logfire \
+            docling \
+            trafilatura \
+            google-genai \
+            qdrant-client[fastembed] \
+            rank-bm25 \
+            numpy \
+            ascii_colors \
+            tiktoken \
+            google-cloud-storage \
+            flashrank \
+            langchain-text-splitters \
+            fastapi \
+            uvicorn[standard] \
+            tenacity \
+            redis \
+            langgraph \
+            langchain \
+            psycopg[binary] \
+            psycopg-pool \
+            groq
+
+      - name: Install project in editable mode
+        run: pip install -e .
+
+      - name: Create minimal .env for CI
+        run: |
+          cat > .env <<'EOF'
+          PROJECT_NAME=studious-ci
+          PORT=8000
+          HOST=localhost
+          CORS_ORIGINS=*
+          REDIS_URL=redis://localhost:6379
+          QDRANT_COLLECTION_NAME=rag_docs
+          EMBEDDING_DIMENSIONS=256
+          EMBEDDING_BATCH_SIZE=10
+          CHUNK_SIZE=512
+          CHUNK_OVERLAP=64
+          MODEL_CONTEXT_LIMIT=128000
+          MAX_OUTPUT_TOKENS=2048
+          MAX_PROMPT_OVERHEAD_TOKENS=1024
+          MAX_QUERY_INPUT_TOKENS=512
+          MAX_CONTEXT_CHARS=100000
+          EOF
+
+      - name: Run integration tests
+        run: |
+          pytest tests/integration/ \
+            -v \
+            --tb=short \
+            -m integration
+
+
   security:
     name: Security Audit
     runs-on: ubuntu-latest
