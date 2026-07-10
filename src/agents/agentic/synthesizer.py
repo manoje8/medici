@@ -223,14 +223,14 @@ Answer format:
     async def _synthesize_chitchat(self, state: State | dict) -> str:
         """Handle casual conversation with friendly tone."""
         original_question = self._get_question(state)
-        retrieval_history = _get(state, "retrieval_history") or []
+        conversational_history = _get(state, "conversational_history") or []
 
         prompt = f"""
 You are a friendly and helpful Enterprise AI Assistant.
 Respond naturally to the user's message while maintaining professionalism.
 
 Conversation context:
-{self._format_history(retrieval_history)}
+{self._format_history(conversational_history)}
 
 User message: {original_question}
 
@@ -362,13 +362,13 @@ Rules:
 
         original_question = self._get_question(state)
         context = _build_context(state)
-        retrieval_history = _get(state, "retrieval_history") or []
+        conversational_history = _get(state, "conversational_history") or []
 
         if any(
             word in original_question.lower()
             for word in ["previous", "discussed", "conversation", "recap"]
         ):
-            return await self._summarize_conversation(retrieval_history)
+            return await self._summarize_conversation(conversational_history)
 
         prompt = f"""{_FIREWALL_PREAMBLE}
 Create a comprehensive yet concise summary.
@@ -403,14 +403,14 @@ Rules:
 
         original_question = self._get_question(state)
         context = _build_context(state)
-        retrieval_history = _get(state, "retrieval_history") or []
+        conversational_history = _get(state, "conversational_history") or []
 
         prompt = f"""{_FIREWALL_PREAMBLE}
 The user is asking for clarification on a previous topic.
 Provide additional detail and explanation.
 
 Previous context:
-{self._format_history(retrieval_history)}
+{self._format_history(conversational_history)}
 
 Clarification needed: {original_question}
 

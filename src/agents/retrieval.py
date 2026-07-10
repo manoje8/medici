@@ -143,7 +143,7 @@ Use "exhausted" if the information is likely not in this document.
                 chunk_retrieved=results,
                 relevance_score=[r["score"] for r in results],
                 decision=RetrievalDecision.SUFFICIENT,
-                reasoning="Top rerank score {top_score:.2f} exceeded confidence threshold",
+                reasoning=f"Top rerank score {top_score:.2f} exceeded confidence threshold",
             )
 
         logfire.debug(
