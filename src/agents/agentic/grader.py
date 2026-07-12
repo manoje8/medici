@@ -185,7 +185,7 @@ Respond with JSON only:
 """
         for attempt in range(_GRADE_MAX_RETRIES + 1):
             try:
-                result = await self.llm.complete(prompt)
+                result = await self.llm.complete(prompt, stage_tag="grader_chunk")
                 grade = result.parsed_json
 
                 if "relevant" not in grade:
@@ -271,7 +271,7 @@ Return JSON: {{"covered_indices": [0, 2, 3]}}
 Only include indices that have sufficient information.
 """
         try:
-            result = await self.llm.complete(prompt)
+            result = await self.llm.complete(prompt, stage_tag="grader_coverage")
             data = result.parsed_json
             return set(data.get("covered_indices", []))
         except Exception:
@@ -356,7 +356,7 @@ Return JSON:
 
 """
         try:
-            result = await self.llm.complete(prompt)
+            result = await self.llm.complete(prompt, stage_tag="grader_completeness")
             data = result.parsed_json
 
             return {

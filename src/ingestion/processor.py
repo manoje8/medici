@@ -8,8 +8,8 @@ from typing import Any
 import logfire
 from tqdm import tqdm
 
+from src.common.cache.doc_cache import DocumentCache
 from src.common.services.qdrant import QdrantStorageService
-from src.common.services.sparse_index import SparseSearchIndex
 from src.common.storage.storage_factory import StorageFactory
 from src.common.utils.config import config
 from src.common.utils.constants import (
@@ -20,7 +20,6 @@ from src.common.utils.constants import (
     ParseMethod,
     StorageType,
 )
-from src.common.utils.doc_cache import DocumentCache
 from src.common.utils.helper import separate_content, supported_extensions_list
 from src.common.utils.tokenizer import TikTokenTokenizer, Tokenizer
 from src.ingestion.chunking.chunk import BatchProcess, build_parent_child_chunk
@@ -50,7 +49,6 @@ class Processor:
             cache_dir=(Path(cache_dir) if hasattr(config, "cache_dir") else config.CACHE_DIR)
         )
 
-        self.sparse_index = SparseSearchIndex()
         self.tokenizer = tokenizer or TikTokenTokenizer(model_name="gpt-4o-mini")
 
         local_config = {

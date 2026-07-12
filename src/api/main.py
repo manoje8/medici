@@ -25,6 +25,8 @@ from src.agents.memory.short_term import ShortTermMemoryManager
 from src.agents.retrieval import RetrievalAgent
 from src.api.routers.document_routes import create_document_routes
 from src.api.routers.query_router import create_query_routes
+from src.common.cache.embedding_cache import EmbeddingCache
+from src.common.cache.semantic_cache import SemanticQueryCache
 from src.common.llm.gemini import GeminiClient
 from src.common.llm.groq import GroqClient
 from src.common.services.hybrid_search import HybridSearch
@@ -46,7 +48,6 @@ async def lifespan(app: FastAPI):
     )
 
     closers: list[tuple[str, Callable[[], Awaitable[None]]]] = []
-    rebuild_task: asyncio.Task | None = None
 
     try:
         await pool.open()
@@ -62,10 +63,20 @@ async def lifespan(app: FastAPI):
         if hasattr(short_term, "aclose"):
             closers.append(("redis", short_term.aclose))
 
+        emb_cache: EmbeddingCache | None = None
+        if config.EMBEDDING_CACHE_ENABLED:
+            emb_cache = EmbeddingCache(
+                dsn=config.POSTGRES_CONN_STRING,
+                max_entries=config.EMBEDDING_CACHE_MAX_ENTRIES,
+            )
+            closers.append(("embedding cache", lambda: emb_cache.close() or asyncio.sleep(0)))
+            logfire.info("EmbeddingCache enabled", stats=emb_cache.stats())
+
         embedding_service = EmbeddingService(
             model_name=config.EMBEDDING_MODEL_NAME,
             dimensions=config.EMBEDDING_DIMENSIONS,
             batch_size=config.EMBEDDING_BATCH_SIZE,
+            cache=emb_cache,
         )
         storage_service = QdrantStorageService(
             url=config.QDRANT_CLUSTER_ENDPOINT,
@@ -97,7 +108,24 @@ async def lifespan(app: FastAPI):
             synthesizer=SynthesizerAgent(groq_client),
         )
 
-        pipeline = GraphPipeline(graph, short_term_memory=short_term)
+        semantic_cache: SemanticQueryCache | None = None
+        if config.SEMANTIC_CACHE_ENABLED:
+            semantic_cache = SemanticQueryCache(
+                redis_url=config.REDIS_URL,
+                embedding_fn=embedding_service.embed_single,
+                similarity_threshold=config.SEMANTIC_CACHE_THRESHOLD,
+                ttl_seconds=config.SEMANTIC_CACHE_TTL_SECONDS,
+                max_entries=config.SEMANTIC_CACHE_MAX_ENTRIES,
+            )
+            closers.append(("semantic cache", semantic_cache.aclose))
+            logfire.info("SemanticQueryCache enabled", threshold=config.SEMANTIC_CACHE_THRESHOLD)
+
+        pipeline = GraphPipeline(
+            graph,
+            short_term_memory=short_term,
+            semantic_cache=semantic_cache,
+            llm_clients=[gemini_client, groq_client],
+        )
         app.state.pipeline = pipeline
         app.state.pool = pool
         app.state.qdrant = storage_service
@@ -113,10 +141,6 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         app.state.pipeline = None
-        if rebuild_task is not None:
-            rebuild_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await rebuild_task
         for name, close in reversed(closers):
             try:
                 await close()
@@ -144,7 +168,7 @@ def create_apps():
 
     @app.get("/")
     def root():
-        return "running"
+        return "server running"
 
     @app.get("/health", tags=["observability"])
     async def health(request: Request):

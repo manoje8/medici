@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-from src.common.utils.doc_cache import DocumentCache
+from src.common.cache.doc_cache import DocumentCache
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -35,7 +35,7 @@ def _write_file(path: Path, data: bytes) -> None:
 def _make_cache(tmp_path: Path) -> DocumentCache:
     """Return a DocumentCache whose manifest and .gz files live in *tmp_path*."""
     with (
-        patch("src.common.utils.doc_cache.config") as mock_cfg,
+        patch("src.common.cache.doc_cache.config") as mock_cfg,
         patch("src.common.utils.config.config"),  # silence env reads
     ):
         mock_cfg.CACHE_DIR = tmp_path

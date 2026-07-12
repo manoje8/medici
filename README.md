@@ -30,7 +30,7 @@ Google Document AI Parser
   └── filesystem gzip cache (avoids redundant API calls)
         │
         ▼
-Chunker  ─── strategy: structure | fixed | splitter
+Chunker  ─── strategy: recursive char | fixed | splitter
   each chunk = { text, section_title, block_types, page_range, doc_id, … }
         │
         ▼

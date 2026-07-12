@@ -25,7 +25,7 @@ class Config:
     GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY")
-    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-1.5-pro")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
 
     CEREBRAS_API_KEY: str = os.getenv("CEREBRAS_API_KEY")
     CEREBRAS_MODEL: str = os.getenv("CEREBRAS_MODEL", "gpt-oss-120b")
@@ -62,6 +62,28 @@ class Config:
 
     CACHE_DIR = Path(".cache/doc_parser")
     CACHE_MANIFEST = CACHE_DIR / "manifest.json"
+
+    EMBEDDING_CACHE_ENABLED: bool = os.getenv("EMBEDDING_CACHE_ENABLED", "true").lower() == "true"
+    EMBEDDING_CACHE_DIR: Path = Path(os.getenv("EMBEDDING_CACHE_DIR", ".cache/embeddings"))
+    EMBEDDING_CACHE_MAX_ENTRIES: int = int(os.getenv("EMBEDDING_CACHE_MAX_ENTRIES", 50_000))
+
+    SEMANTIC_CACHE_ENABLED: bool = os.getenv("SEMANTIC_CACHE_ENABLED", "true").lower() == "true"
+    SEMANTIC_CACHE_TTL_SECONDS: int = int(os.getenv("SEMANTIC_CACHE_TTL_SECONDS", 3600))
+    SEMANTIC_CACHE_THRESHOLD: float = float(os.getenv("SEMANTIC_CACHE_THRESHOLD", 0.92))
+    SEMANTIC_CACHE_MAX_ENTRIES: int = int(os.getenv("SEMANTIC_CACHE_MAX_ENTRIES", 500))
+
+    SYNTHESIS_MAX_TOKENS_FACTUAL: int = int(os.getenv("SYNTHESIS_MAX_TOKENS_FACTUAL", 1024))
+    SYNTHESIS_MAX_TOKENS_ANALYTICAL: int = int(os.getenv("SYNTHESIS_MAX_TOKENS_ANALYTICAL", 2048))
+    SYNTHESIS_MAX_TOKENS_COMPARATIVE: int = int(os.getenv("SYNTHESIS_MAX_TOKENS_COMPARATIVE", 2048))
+    SYNTHESIS_MAX_TOKENS_PROCEDURAL: int = int(os.getenv("SYNTHESIS_MAX_TOKENS_PROCEDURAL", 2048))
+    SYNTHESIS_MAX_TOKENS_SUMMARIZATION: int = int(
+        os.getenv("SYNTHESIS_MAX_TOKENS_SUMMARIZATION", 1536)
+    )
+    SYNTHESIS_MAX_TOKENS_CHITCHAT: int = int(os.getenv("SYNTHESIS_MAX_TOKENS_CHITCHAT", 512))
+    SYNTHESIS_MAX_TOKENS_CLARIFICATION: int = int(
+        os.getenv("SYNTHESIS_MAX_TOKENS_CLARIFICATION", 1024)
+    )
+    SYNTHESIS_MAX_TOKENS_META: int = int(os.getenv("SYNTHESIS_MAX_TOKENS_META", 512))
 
     # Docling
     TABLE_MODE = os.getenv("TABLE_MODE", "fast")

@@ -484,7 +484,7 @@ class TestPromptInjectionFirewall:
         """Every retrieval-dependent category sends the firewall preamble to the LLM."""
         captured_prompts: list[str] = []
 
-        async def capturing_complete(prompt: str):
+        async def capturing_complete(prompt: str, **kwargs):
             captured_prompts.append(prompt)
             resp = MagicMock()
             resp.text = "Answer [S1]"
@@ -516,7 +516,7 @@ class TestPromptInjectionFirewall:
         """Chitchat does not embed retrieved context, so no preamble is needed."""
         captured_prompts: list[str] = []
 
-        async def capturing_complete(prompt: str):
+        async def capturing_complete(prompt: str, **kwargs):
             captured_prompts.append(prompt)
             resp = MagicMock()
             resp.text = "Hey!"
@@ -537,7 +537,7 @@ class TestPromptInjectionFirewall:
         """Meta does not embed retrieved context, so no preamble is needed."""
         captured_prompts: list[str] = []
 
-        async def capturing_complete(prompt: str):
+        async def capturing_complete(prompt: str, **kwargs):
             captured_prompts.append(prompt)
             resp = MagicMock()
             resp.text = "I can help."

@@ -23,10 +23,6 @@ from src.agents.graph.runner import GraphPipeline
 from src.agents.memory.conversation_model import ConversationSession
 from src.agents.memory.short_term import ShortTermMemoryManager
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_session(user_id: str = "user-1") -> ConversationSession:
     return ConversationSession(session_id=str(uuid.uuid4()), user_id=user_id)
@@ -181,6 +177,8 @@ class TestGraphPipelineSessionIdConsistency:
                 user_id="user-1",
             )
             mock_create.assert_awaited_once()
+
+        print(result)
 
         assert result["session_id"] == new_session.session_id, (
             f"chat() returned session_id={result['session_id']!r} but "

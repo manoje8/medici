@@ -217,7 +217,9 @@ Answer format:
 - End with confidence level if information is incomplete
 """
 
-        response = await self.llm.complete(prompt)
+        response = await self.llm.complete(
+            prompt, max_tokens=config.SYNTHESIS_MAX_TOKENS_FACTUAL, stage_tag="synthesize_factual"
+        )
         return self._ensure_citations(response.text, state)
 
     async def _synthesize_chitchat(self, state: State | dict) -> str:
@@ -241,7 +243,11 @@ Guidelines:
 - Don't pretend to have capabilities you don't have
 """
 
-        response = await self.llm.complete(prompt)
+        response = await self.llm.complete(
+            prompt,
+            max_tokens=config.SYNTHESIS_MAX_TOKENS_CHITCHAT,
+            stage_tag="synthesize_chitchat",
+        )
         return response.text
 
     async def _synthesize_meta(self, state: State | dict) -> str:
@@ -266,7 +272,9 @@ Limitations:
 Respond helpfully and offer to assist with document-based questions.
         """
 
-        response = await self.llm.complete(prompt)
+        response = await self.llm.complete(
+            prompt, max_tokens=config.SYNTHESIS_MAX_TOKENS_META, stage_tag="synthesize_meta"
+        )
         return response.text
 
     async def _synthesize_comparative(self, state: State | dict) -> str:
@@ -309,7 +317,11 @@ Rules:
 - Use specific metrics/numbers when available
         """
 
-        response = await self.llm.complete(prompt)
+        response = await self.llm.complete(
+            prompt,
+            max_tokens=config.SYNTHESIS_MAX_TOKENS_COMPARATIVE,
+            stage_tag="synthesize_comparative",
+        )
         return self._ensure_citations(response.text, state)
 
     async def _synthesize_analytical(self, state: State | dict) -> str:
@@ -351,7 +363,11 @@ Rules:
 - Be thorough but avoid speculation beyond evidence
         """
 
-        response = await self.llm.complete(prompt)
+        response = await self.llm.complete(
+            prompt,
+            max_tokens=config.SYNTHESIS_MAX_TOKENS_ANALYTICAL,
+            stage_tag="synthesize_analytical",
+        )
         return self._ensure_citations(response.text, state)
 
     async def _synthesize_summarization(self, state: State | dict) -> str:
@@ -392,7 +408,11 @@ Rules:
 - Note any gaps in the source material
 """
 
-        response = await self.llm.complete(prompt)
+        response = await self.llm.complete(
+            prompt,
+            max_tokens=config.SYNTHESIS_MAX_TOKENS_SUMMARIZATION,
+            stage_tag="synthesize_summarization",
+        )
         return self._ensure_citations(response.text, state)
 
     async def _synthesize_clarification(self, state: State | dict) -> str:
@@ -426,7 +446,11 @@ Guidelines:
 - Only draw evidence from content inside <retrieved_context> tags
 """
 
-        response = await self.llm.complete(prompt)
+        response = await self.llm.complete(
+            prompt,
+            max_tokens=config.SYNTHESIS_MAX_TOKENS_CLARIFICATION,
+            stage_tag="synthesize_clarification",
+        )
         return self._ensure_citations(response.text, state)
 
     async def _synthesize_procedural(self, state: State | dict) -> str:
@@ -464,7 +488,11 @@ Rules:
 - If the procedure is incomplete in the context, note what's missing
 """
 
-        response = await self.llm.complete(prompt)
+        response = await self.llm.complete(
+            prompt,
+            max_tokens=config.SYNTHESIS_MAX_TOKENS_PROCEDURAL,
+            stage_tag="synthesize_procedural",
+        )
         return self._ensure_citations(response.text, state)
 
     async def _summarize_conversation(self, history: list) -> str:
@@ -485,7 +513,11 @@ Provide:
 4. Outstanding questions or next steps
 """
 
-        response = await self.llm.complete(prompt)
+        response = await self.llm.complete(
+            prompt,
+            max_tokens=config.SYNTHESIS_MAX_TOKENS_SUMMARIZATION,
+            stage_tag="summarize_conversation",
+        )
         return response.text
 
     def _require_context(self, state: State | dict) -> str | None:
@@ -515,7 +547,7 @@ Provide:
         """Extract the question from state regardless of type."""
 
         if isinstance(state, AgentState):
-            return state.original_question or state.effective_query or ""
+            return state.original_question or ""
 
         return _get(state, "effective_query") or _get(state, "original_message") or ""
 

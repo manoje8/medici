@@ -4,6 +4,7 @@ import re
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
 
+import logfire
 from google.api_core import exceptions as _gexc
 
 
@@ -110,12 +111,16 @@ class BaseLLM(ABC):
         self.max_retries = max_retries
         self._call_count = 0
         self._total_tokens = 0
+        self._total_prompt_tokens = 0
+        self._total_completion_tokens = 0
 
     @abstractmethod
     async def _complete_impl(self, prompt: str, max_token: int, **kwargs) -> LLMResponse:
         pass
 
-    async def complete(self, prompt: str, max_tokens: int = 1024, **kwargs) -> LLMResponse:
+    async def complete(
+        self, prompt: str, max_tokens: int = 1024, stage_tag: str = "unknown", **kwargs
+    ) -> LLMResponse:
         context = LLMRequestContext(
             prompt=prompt,
             max_tokens=max_tokens,
@@ -126,13 +131,31 @@ class BaseLLM(ABC):
             context.retry_count = attempt
 
             try:
-                response = await asyncio.wait_for(
-                    self._complete_with_metadata(prompt, max_tokens, context, **kwargs),
-                    timeout=self.timeout_seconds,
-                )
-                self._call_count += 1
-                self._total_tokens += response.metadata.get("token_usage", {}).get("total", 0)
-                return response
+                with logfire.span(
+                    "llm.complete",
+                    model=self.model_name,
+                    stage=stage_tag,
+                    attempt=attempt,
+                    prompt_length=len(prompt),
+                ) as span:
+                    response = await asyncio.wait_for(
+                        self._complete_with_metadata(prompt, max_tokens, context, **kwargs),
+                        timeout=self.timeout_seconds,
+                    )
+                    usage = response.metadata.get("token_usage", {})
+                    self._call_count += 1
+                    self._total_tokens += usage.get("total", 0)
+                    self._total_prompt_tokens += usage.get("prompt_tokens", 0)
+                    self._total_completion_tokens += usage.get("completion_tokens", 0)
+                    span.set_attributes(
+                        {
+                            "prompt_tokens": usage.get("prompt_tokens", 0),
+                            "completion_tokens": usage.get("completion_tokens", 0),
+                            "total_tokens": usage.get("total", 0),
+                            "call_count": self._call_count,
+                        }
+                    )
+                    return response
 
             except asyncio.TimeoutError as err:
                 if attempt == self.max_retries:
@@ -179,6 +202,29 @@ class BaseLLM(ABC):
     @property
     def total_tokens(self) -> int:
         return self._total_tokens
+
+    def usage_snapshot(self) -> dict:
+        """
+        Return a point-in-time snapshot of cumulative token usage for this client instance.
+
+        Suitable for including in per-request response metadata after graph execution.
+        Reset is intentionally NOT performed here — call reset_usage() if you need
+        per-request isolation (e.g. when a single client is reused across many requests).
+        """
+        return {
+            "model": self.model_name,
+            "calls": self._call_count,
+            "prompt_tokens": self._total_prompt_tokens,
+            "completion_tokens": self._total_completion_tokens,
+            "total_tokens": self._total_tokens,
+        }
+
+    def reset_usage(self) -> None:
+        """Reset cumulative counters. Call before each request when sharing a client instance."""
+        self._call_count = 0
+        self._total_tokens = 0
+        self._total_prompt_tokens = 0
+        self._total_completion_tokens = 0
 
     @property
     @abstractmethod

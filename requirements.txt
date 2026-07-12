@@ -28,6 +28,7 @@ sqlalchemy
 pg8000
 psycopg[binary]
 psycopg-pool
+asyncpg
 
 langchain
 langgraph

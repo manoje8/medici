@@ -147,19 +147,15 @@ Respond with EXACTLY this JSON format:
         "max_retrieval_depth": 2,
         "target_chunks": 5
     }},
-    "complexity_level": 1-5,
-    "estimated_tokens": 500,
+    "complexity_level": 1,
     "requires_citation": true,
     "requires_source_attribution": true,
-    "suggested_model_temperature": 0.3,
-    "suggested_context_window": 4000,
-    "priority_level": "normal|high|critical",
-    "intent_signals": ["specific", "keywords", "detected"]
+    "suggested_model_temperature": 0.3
 }}
 """
         with logfire.span("classify_query", prompt_length=len(prompt)) as span:
             try:
-                response = await self.llm.complete(prompt)
+                response = await self.llm.complete(prompt, stage_tag="router")
                 parsed_data = self._parse_and_validate_response(response)
                 result = self._apply_fallback_strategy(result=parsed_data)
 
@@ -175,12 +171,6 @@ Respond with EXACTLY this JSON format:
                         "target_chunks": result["retrieval_strategy"].get("target_chunks"),
                         "requires_confirmation": result.get("requires_confirmation", False),
                     }
-                )
-
-                logfire.info(
-                    "Routing decision: {category} (confidence={confidence})",
-                    category=result.get("primary_category"),
-                    confidence=result.get("confidence_score"),
                 )
 
                 return result
@@ -265,13 +255,9 @@ Respond with EXACTLY this JSON format:
                 "target_chunks": 5,
             },
             "complexity_level": 2,
-            "estimated_tokens": 500,
             "requires_citation": True,
             "requires_source_attribution": True,
             "suggested_model_temperature": 0.3,
-            "suggested_context_window": 4000,
-            "priority_level": "normal",
-            "intent_signals": ["fallback"],
         }
 
     def _apply_fallback_strategy(self, result: dict) -> dict:

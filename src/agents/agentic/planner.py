@@ -19,7 +19,7 @@ class PlannerAgent:
         Example output: ["What was memory usage in Q3?", "What was memory usage in Q4?"]
         """
 
-        response = await self.llm.complete(prompt)
+        response = await self.llm.complete(prompt, stage_tag="planner")
         sub_questions = response.parsed_json
 
         logfire.info(f"Planner decomposed into {len(sub_questions)} sub-questions")

@@ -5,6 +5,7 @@ import logfire
 from google import genai
 from qdrant_client.http.models import PointStruct
 
+from src.common.cache.embedding_cache import EmbeddingCache
 from src.common.utils.config import config
 from src.ingestion.chunking.chunk import Chunk
 
@@ -30,6 +31,7 @@ class EmbeddingService:
         batch_size: int = 100,
         max_retries: int = 3,
         retry_delay: float = 1.0,
+        cache: EmbeddingCache | None = None,
     ):
         self.client = genai.Client(
             vertexai=True, project=config.PROJECT_ID, location=config.LOCATION
@@ -39,18 +41,24 @@ class EmbeddingService:
         self.batch_size = batch_size
         self.max_retries = max_retries
         self.retry_delay = retry_delay
+        self._cache = cache
 
     @property
     def vector_size(self) -> int:
         return self.dimensions or config.VECTOR_SIZE
 
     async def embed_single(self, text: str) -> list[float]:
-        """Embed one piece of text"""
+        """Embed one piece of text, returning a cached vector when available."""
 
         text = text.strip()
 
         if not text:
             raise ValueError("Cannot embed empty text")
+
+        if self._cache is not None:
+            cached = await self._cache.get(text)
+            if cached is not None:
+                return cached
 
         for attempt in range(self.max_retries):
             try:
@@ -64,7 +72,10 @@ class EmbeddingService:
                     ),
                 )
 
-                return response.embeddings[0].values
+                vector = response.embeddings[0].values
+                if self._cache is not None:
+                    await self._cache.put(text, vector)
+                return vector
             except Exception as e:
                 if attempt == self.max_retries - 1:
                     logfire.error(f"Embedding failed after {self.max_retries} attempts: {e}")
@@ -73,52 +84,78 @@ class EmbeddingService:
                 await asyncio.sleep(self.retry_delay * (attempt + 1))
 
     async def embed_chunks(self, chunks: list[Chunk]) -> list[EmbeddedChunk]:
-        """Embed a list of chunks in batches"""
+        """Embed a list of chunks in batches, skipping API calls for cached chunks."""
 
         if not chunks:
             return []
 
-        embedded = []
-        total_batches = (len(chunks) + self.batch_size - 1) // self.batch_size
+        result_map: dict[int, EmbeddedChunk] = {}
+        uncached_indices: list[int] = []
 
-        for batch_num in range(total_batches):
-            start = batch_num * self.batch_size
-            end = start + self.batch_size
-
-            batch = chunks[start:end]
-
-            logfire.info(f"Embedding batch {batch_num + 1}/{total_batches}({len(batch)} chunks)")
-
-            for attempt in range(self.max_retries):
-                try:
-                    batch_texts = [chunk.text for chunk in batch]
-                    response = await asyncio.to_thread(
-                        self.client.models.embed_content,
-                        model=self.model_name,
-                        contents=batch_texts,
-                        config=genai.types.EmbedContentConfig(
-                            task_type="RETRIEVAL_DOCUMENT",
-                            output_dimensionality=self.dimensions,
-                        ),
+        if self._cache is not None:
+            for idx, chunk in enumerate(chunks):
+                cached_vec = await self._cache.get(chunk.text)
+                if cached_vec is not None:
+                    result_map[idx] = EmbeddedChunk(
+                        chunk=chunk, vector=cached_vec, model_name=self.model_name
                     )
+                else:
+                    uncached_indices.append(idx)
+        else:
+            uncached_indices = list(range(len(chunks)))
 
-                    for chunk, emb in zip(batch, response.embeddings, strict=False):
-                        embedded.append(
-                            EmbeddedChunk(
+        cache_hits = len(result_map)
+        if cache_hits:
+            logfire.info(f"EmbeddingCache: {cache_hits}/{len(chunks)} chunks served from cache")
+
+        uncached_chunks = [chunks[i] for i in uncached_indices]
+
+        if uncached_chunks:
+            total_batches = (len(uncached_chunks) + self.batch_size - 1) // self.batch_size
+
+            embedded_uncached: list[EmbeddedChunk] = []
+            for batch_num in range(total_batches):
+                start = batch_num * self.batch_size
+                end = start + self.batch_size
+                batch = uncached_chunks[start:end]
+
+                logfire.info(
+                    f"Embedding batch {batch_num + 1}/{total_batches} ({len(batch)} chunks)"
+                )
+
+                for attempt in range(self.max_retries):
+                    try:
+                        batch_texts = [chunk.text for chunk in batch]
+                        response = await asyncio.to_thread(
+                            self.client.models.embed_content,
+                            model=self.model_name,
+                            contents=batch_texts,
+                            config=genai.types.EmbedContentConfig(
+                                task_type="RETRIEVAL_DOCUMENT",
+                                output_dimensionality=self.dimensions,
+                            ),
+                        )
+
+                        for chunk, emb in zip(batch, response.embeddings, strict=False):
+                            ec = EmbeddedChunk(
                                 chunk=chunk,
                                 vector=emb.values,
                                 model_name=self.model_name,
                             )
-                        )
-                    break
+                            embedded_uncached.append(ec)
+                            if self._cache is not None:
+                                await self._cache.put(chunk.text, emb.values)
+                        break
 
-                except Exception as e:
-                    if attempt == self.max_retries - 1:
-                        logfire.error(f"Batch {batch_num + 1} failed: {e}")
-                        raise
+                    except Exception as e:
+                        if attempt == self.max_retries - 1:
+                            logfire.error(f"Batch {batch_num + 1} failed: {e}")
+                            raise
+                        await asyncio.sleep(self.retry_delay * (attempt + 1))
 
-                    await asyncio.sleep(self.retry_delay * (attempt + 1))
+            for orig_idx, ec in zip(uncached_indices, embedded_uncached, strict=False):
+                result_map[orig_idx] = ec
 
+        embedded = [result_map[i] for i in range(len(chunks))]
         logfire.info(f"Embedding complete: {len(embedded)} vectors produced")
-
         return embedded

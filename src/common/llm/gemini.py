@@ -8,7 +8,7 @@ from src.common.utils.config import config
 
 
 class GeminiClient(BaseLLM):
-    def __init__(self, model: str = "gemini-2.5-flash-lite", **kwargs):
+    def __init__(self, model: str = "gemini-3.5-flash", **kwargs):
         super().__init__(**kwargs)
         self.client = genai.Client(api_key=config.GEMINI_API_KEY)
         self.model = model
