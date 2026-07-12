@@ -5,6 +5,7 @@ from langgraph.graph import END, StateGraph
 
 from src.agents.graph.edges import (
     route_after_classify,
+    route_after_grade,
     route_after_next_sub_question,
     route_after_retrieve,
 )
@@ -16,6 +17,7 @@ from src.agents.graph.nodes import (
     plan,
     refine_query,
     retrieve,
+    rewrite_for_refinement,
     rewrite_query,
     route,
     synthesize,
@@ -51,6 +53,7 @@ def build_rag_graph(
         "handle_simple_response",
         partial(handle_simple_response, synthesizer=synthesizer),
     )
+    builder.add_node("rewrite_for_refinement", partial(rewrite_for_refinement))
     # Edges
     builder.set_entry_point("rewrite_query")
     builder.add_edge("rewrite_query", "route")
@@ -87,7 +90,15 @@ def build_rag_graph(
         },
     )
 
-    builder.add_edge("grade", "synthesize")
+    builder.add_conditional_edges(
+        "grade",
+        route_after_grade,
+        {
+            "rewrite_for_refinement": "rewrite_for_refinement",
+            "synthesize": "synthesize",
+        },
+    )
+    builder.add_edge("rewrite_for_refinement", "retrieve")
     builder.add_edge("direct_synthesize", END)
     builder.add_edge("handle_simple_response", END)
     builder.add_edge("synthesize", END)

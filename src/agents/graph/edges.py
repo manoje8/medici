@@ -4,6 +4,12 @@ from src.agents.graph.state import State
 
 GLOBAL_MAX_RETRIEVAL_STEPS = 6
 
+# Maximum number of full re-retrieval passes the grader may trigger.
+# Set to 1: one extra pass is almost always enough to fill genuine gaps;
+# higher values risk infinite loops when the provider consistently returns
+# low-scoring results.
+_MAX_REFINEMENT_LOOPS = 1
+
 
 def route_after_classify(state: State) -> str:
     category = state.get("question_category", "factual").lower()
@@ -87,3 +93,31 @@ def route_after_next_sub_question(state: State) -> str:
         return "retrieve"
 
     return "grade"
+
+
+def route_after_grade(state: State) -> str:
+    """
+    Route from 'grade' to either a refinement loop or the final synthesizer.
+
+    When the grader signals needs_refinement=True and the refinement budget
+    has not been exhausted, the graph loops back through retrieve so the
+    synthesizer is only called when retrieval quality is acceptable (or the
+    budget is spent).
+    """
+    needs_refinement = state.get("needs_refinement", False)
+    refinement_loops = state.get("refinement_loops", 0)
+
+    logfire.debug(
+        "route_after_grade",
+        needs_refinement=needs_refinement,
+        refinement_loops=refinement_loops,
+        max_loops=_MAX_REFINEMENT_LOOPS,
+    )
+
+    if needs_refinement and refinement_loops < _MAX_REFINEMENT_LOOPS:
+        logfire.info(
+            f"Grader triggered refinement loop {refinement_loops + 1}/{_MAX_REFINEMENT_LOOPS}"
+        )
+        return "rewrite_for_refinement"
+
+    return "synthesize"

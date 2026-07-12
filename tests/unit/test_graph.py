@@ -15,6 +15,7 @@ import pytest
 
 from src.agents.graph.edges import (
     route_after_classify,
+    route_after_grade,
     route_after_next_sub_question,
     route_after_retrieve,
 )
@@ -24,6 +25,7 @@ from src.agents.graph.nodes import (
     plan,
     refine_query,
     retrieve,
+    rewrite_for_refinement,
     rewrite_query,
     route,
     synthesize,
@@ -500,15 +502,55 @@ class TestGradeNode:
     @pytest.fixture
     def mock_grader(self):
         m = MagicMock()
-        m.grade = AsyncMock(return_value=[{"text": "graded chunk", "source": "b.pdf"}])
+        # grade() returns a dict that the graph merges into state
+        m.grade = AsyncMock(
+            return_value={
+                "retrieval_grade_score": 0.75,
+                "grading_details": {
+                    "accepted_count": 1,
+                    "total_count": 1,
+                    "relevance_ratio": 1.0,
+                    "coverage_score": 1.0,
+                    "completeness": {"level": "sufficient"},
+                    "needs_refinement": False,
+                    "rejected_reasons": [],
+                },
+                "accepted_chunks": [{"text": "graded chunk", "source": "b.pdf"}],
+                "needs_refinement": False,
+            }
+        )
         return m
 
     @pytest.mark.asyncio
-    async def test_graded_chunks_are_returned(self, mock_grader):
+    async def test_grade_delegates_to_grader(self, mock_grader):
+        state = _base_state(accepted_chunks=[{"text": "raw chunk"}], effective_query="q")
+        result = await grade(state, grader=mock_grader)  # noqa: F841
+
+        mock_grader.grade.assert_awaited_once_with(state)
+
+    @pytest.mark.asyncio
+    async def test_grade_returns_dict_with_required_keys(self, mock_grader):
         state = _base_state(accepted_chunks=[{"text": "raw chunk"}], effective_query="q")
         result = await grade(state, grader=mock_grader)
 
-        assert result == [{"text": "graded chunk", "source": "b.pdf"}]
+        assert "retrieval_grade_score" in result
+        assert "accepted_chunks" in result
+        assert "needs_refinement" in result
+
+    @pytest.mark.asyncio
+    async def test_grade_propagates_needs_refinement(self, mock_grader):
+        mock_grader.grade = AsyncMock(
+            return_value={
+                "retrieval_grade_score": 0.2,
+                "grading_details": {},
+                "accepted_chunks": [],
+                "needs_refinement": True,
+            }
+        )
+        state = _base_state(accepted_chunks=[], effective_query="q")
+        result = await grade(state, grader=mock_grader)
+
+        assert result["needs_refinement"] is True
 
 
 # Node: synthesize
@@ -678,6 +720,94 @@ class TestRouteAfterNextSubQuestion:
     def test_always_returns_retrieve(self):
         state = _base_state(current_sub_question_idx=1, sub_questions=["q0", "q1"])
         assert route_after_next_sub_question(state) == "retrieve"
+
+
+# ---------------------------------------------------------------------------
+# Edge: route_after_grade
+# ---------------------------------------------------------------------------
+
+
+class TestRouteAfterGrade:
+    """Tests for the route_after_grade conditional edge."""
+
+    def test_needs_refinement_false_routes_to_synthesize(self):
+        state = _base_state(needs_refinement=False, refinement_loops=0)
+        assert route_after_grade(state) == "synthesize"
+
+    def test_needs_refinement_true_within_budget_routes_to_rewrite(self):
+        state = _base_state(needs_refinement=True, refinement_loops=0)
+        assert route_after_grade(state) == "rewrite_for_refinement"
+
+    def test_needs_refinement_true_budget_exhausted_routes_to_synthesize(self):
+        # refinement_loops == _MAX_REFINEMENT_LOOPS (1) → budget spent
+        state = _base_state(needs_refinement=True, refinement_loops=1)
+        assert route_after_grade(state) == "synthesize"
+
+    def test_missing_needs_refinement_defaults_to_synthesize(self):
+        """State without needs_refinement key should default to synthesize."""
+        state = _base_state()  # no needs_refinement key
+        assert route_after_grade(state) == "synthesize"
+
+    def test_missing_refinement_loops_defaults_to_zero(self):
+        """State without refinement_loops key should be treated as 0."""
+        state = _base_state(needs_refinement=True)  # no refinement_loops key
+        assert route_after_grade(state) == "rewrite_for_refinement"
+
+
+# ---------------------------------------------------------------------------
+# Node: rewrite_for_refinement
+# ---------------------------------------------------------------------------
+
+
+class TestRewriteForRefinementNode:
+    """Tests for the rewrite_for_refinement node."""
+
+    @pytest.mark.asyncio
+    async def test_increments_refinement_loops(self):
+        state = _base_state(refinement_loops=0)
+        result = await rewrite_for_refinement(state)
+        assert result["refinement_loops"] == 1
+
+    @pytest.mark.asyncio
+    async def test_increments_refinement_loops_from_nonzero(self):
+        state = _base_state(refinement_loops=1)
+        result = await rewrite_for_refinement(state)
+        assert result["refinement_loops"] == 2
+
+    @pytest.mark.asyncio
+    async def test_resets_retrieval_round_to_zero(self):
+        state = _base_state(retrieval_round=3)
+        result = await rewrite_for_refinement(state)
+        assert result["retrieval_round"] == 0
+
+    @pytest.mark.asyncio
+    async def test_resets_sub_question_index_to_zero(self):
+        state = _base_state(current_sub_question_idx=2)
+        result = await rewrite_for_refinement(state)
+        assert result["current_sub_question_idx"] == 0
+
+    @pytest.mark.asyncio
+    async def test_resets_total_retrieval_steps_to_zero(self):
+        state = _base_state()
+        state["total_retrieval_steps"] = 5
+        result = await rewrite_for_refinement(state)
+        assert result["total_retrieval_steps"] == 0
+
+    @pytest.mark.asyncio
+    async def test_clears_accepted_chunks(self):
+        state = _base_state(accepted_chunks=[{"text": "old chunk"}])
+        result = await rewrite_for_refinement(state)
+        assert result["accepted_chunks"] == []
+
+    @pytest.mark.asyncio
+    async def test_clears_retrieval_history(self):
+        state = _base_state(
+            retrieval_history=[
+                {"query": "q", "decision": "sufficient", "reasoning": "", "chunks": []}
+            ]
+        )
+        result = await rewrite_for_refinement(state)
+        assert result["retrieval_history"] == []
 
 
 # ---------------------------------------------------------------------------

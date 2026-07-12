@@ -3,6 +3,10 @@ import asyncio
 import logfire
 
 from src.agents.graph.state import State
+from src.common.llm.base import LLMContentError
+
+_GRADE_CONCURRENCY = 5
+_GRADE_MAX_RETRIES = 2
 
 
 class GraderAgent:
@@ -12,7 +16,7 @@ class GraderAgent:
     async def grade(self, state: State) -> dict:
         """Grades retrieval quality and returns a score for routing decisions."""
 
-        query = state.get("effective_query", "original_message")
+        query = state.get("effective_query") or state.get("original_message", "")
         sub_questions = state.get("sub_questions", [])
         accepted_chunks = state.get("accepted_chunks", [])
         # retrieval_history = state.get("retrieval_history", [])
@@ -85,7 +89,7 @@ class GraderAgent:
 
     async def _grade_chunks_batch(self, chunks: list[dict], query: str, sub_questions: list[str]):
         """
-        Grade all chunks in parallel for efficiency.
+        Grade all chunks in parallel for efficiency, bounded by _GRADE_CONCURRENCY.
         Returns accepted chunks and grading metadata.
 
         :param chunks:
@@ -95,9 +99,13 @@ class GraderAgent:
         if not chunks:
             return [], {"rejected_reasons": []}
 
-        tasks = [self._grade_single_chunk(chunk, query, sub_questions) for chunk in chunks]
+        sem = asyncio.Semaphore(_GRADE_CONCURRENCY)
 
-        results = await asyncio.gather(*tasks)
+        async def _bounded(chunk: dict):
+            async with sem:
+                return await self._grade_single_chunk(chunk, query, sub_questions)
+
+        results = await asyncio.gather(*[_bounded(c) for c in chunks])
 
         accepted = []
         rejected_reasons = []
@@ -175,18 +183,31 @@ Respond with JSON only:
     "key_information": ["list", "of", "key", "facts", "found"]
 }}
 """
-        try:
-            result = await self.llm.complete(prompt)
-            grade = result.parsed_json
+        for attempt in range(_GRADE_MAX_RETRIES + 1):
+            try:
+                result = await self.llm.complete(prompt)
+                grade = result.parsed_json
 
-            if "relevant" not in grade:
+                if "relevant" not in grade:
+                    # Malformed JSON response — deterministically broken, fail-closed.
+                    return self._default_grade_result()
+
+                return grade
+
+            except LLMContentError as e:
+                # Non-retryable (bad prompt, auth failure, etc.) — fail-closed.
+                logfire.error(f"Non-retryable grading error, rejecting chunk: {e}")
                 return self._default_grade_result()
 
-            return grade
-
-        except Exception as e:
-            logfire.error(f"Error grading chunk: {e}")
-            return self._default_grade_result()
+            except Exception as e:
+                if attempt == _GRADE_MAX_RETRIES:
+                    logfire.warn(
+                        f"Grading failed after {_GRADE_MAX_RETRIES + 1} attempts, "
+                        f"keeping chunk conservatively: {e}"
+                    )
+                    return self._default_grade_result_fail_open()
+                logfire.warn(f"Grading attempt {attempt + 1} failed, retrying: {e}")
+                await asyncio.sleep(2**attempt)
 
     async def _calculate_coverage(
         self, graded_chunks: list[dict], sub_questions: list[str], query: str
@@ -396,13 +417,31 @@ Return JSON:
         return round(score, 2)
 
     def _default_grade_result(self):
-        """Default result when grading fails."""
+        """Fail-closed default: used for non-retryable / deterministic errors."""
         return {
             "relevant": False,
             "score": 0.0,
             "reason": "Grading failed - defaulting to not relevant",
             "answers_sub_questions": [],
             "information_type": "irrelevant",
+            "key_information": [],
+        }
+
+    def _default_grade_result_fail_open(self):
+        """
+        Fail-open default: used after retries are exhausted on transient errors.
+
+        Keeping the chunk avoids silently discarding potentially good context
+        and prevents a spurious refinement loop being triggered solely because
+        the grading provider had a momentary hiccup.  The low score (0.3) still
+        signals to downstream stages that this chunk was not formally vetted.
+        """
+        return {
+            "relevant": True,
+            "score": 0.3,
+            "reason": "Grading failed (transient error) — keeping chunk conservatively",
+            "answers_sub_questions": [],
+            "information_type": "supporting_context",
             "key_information": [],
         }
 

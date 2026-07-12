@@ -132,3 +132,25 @@ async def handle_simple_response(state: State, synthesizer) -> dict:
         "final_answer": result["final_answer"],
         "sources": [],
     }
+
+
+async def rewrite_for_refinement(state: State) -> dict:
+    """
+    Reset retrieval state for a grader-triggered re-retrieval pass.
+
+    Called when route_after_grade decides the grader's needs_refinement flag
+    warrants another full retrieval cycle.  Increments refinement_loops so the
+    loop-guard in route_after_grade can enforce the ceiling, and resets all
+    per-cycle counters so the graph re-runs the sub-question loop cleanly.
+
+    Note: sub_questions is intentionally preserved — we re-retrieve for the
+    same decomposed plan rather than re-running the planner.
+    """
+    return {
+        "refinement_loops": state.get("refinement_loops", 0) + 1,
+        "retrieval_round": 0,
+        "current_sub_question_idx": 0,
+        "total_retrieval_steps": 0,
+        "accepted_chunks": [],
+        "retrieval_history": [],
+    }

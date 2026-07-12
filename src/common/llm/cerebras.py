@@ -1,5 +1,3 @@
-import asyncio
-
 from cerebras.cloud.sdk import AsyncCerebras
 
 from src.common.llm.base import BaseLLM, LLMResponse
@@ -15,25 +13,27 @@ class CerebrasAI(BaseLLM):
         )
 
     async def _complete_impl(self, prompt: str, max_token: int, **kwargs) -> LLMResponse:
-        loop = asyncio.get_event_loop()
-
-        completion = await loop.run_in_executor(
-            None,
-            lambda: self.client.completions.create(
-                model=self.model,
-                prompt=prompt,
-                max_tokens=max_token,
-                top_p=kwargs.get("top_p", 0.95),
-            ),
+        response = await self.client.completions.create(
+            model=self.model,
+            prompt=prompt,
+            max_tokens=max_token,
+            top_p=kwargs.get("top_p", 0.95),
+            temperature=kwargs.get("temperature", 0.1),
         )
 
-        # TODO" Need to update the LLM response
-        result = completion.choices[0].text
+        if not response or not response.choices[0].text:
+            raise ValueError("Cerebras returned empty response")
 
-        if not result:
-            raise ValueError("Returned no content")
+        token_usage = {}
 
-        return LLMResponse(result, {"token_usage": 0})
+        if hasattr(response, "usage"):
+            token_usage = {
+                "prompt_tokens": response.usage.prompt_tokens or 0,
+                "completion_tokens": response.usage.completion_tokens or 0,
+                "total": response.usage.total_tokens or 0,
+            }
+
+        return LLMResponse(response.choices[0].text, {"token_usage": token_usage})
 
     @property
     def model_name(self) -> str:

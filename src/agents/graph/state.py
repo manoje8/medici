@@ -31,3 +31,7 @@ class State(TypedDict):
     # memory
     conversational_history: list[dict]
     episodic_context: str
+
+    # grading / refinement loop
+    needs_refinement: bool
+    refinement_loops: int
