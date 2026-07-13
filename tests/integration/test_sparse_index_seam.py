@@ -109,18 +109,18 @@ class TestDualSparseIndexIndependence:
 
         # index_a must still find the original chunks (unaffected by index_b's build)
         results_a = index_a.search("retrieval augmented generation")
-        assert any(
-            "retrieval" in r["text"].lower() or "RAG" in r["text"] for r in results_a
-        ), "index_a lost its chunks after index_b was built — shared state regression."
+        assert any("retrieval" in r["text"].lower() or "RAG" in r["text"] for r in results_a), (
+            "index_a lost its chunks after index_b was built — shared state regression."
+        )
 
         # index_b must NOT contain index_a's chunks
-        assert (
-            index_b.chunks == new_chunks
-        ), "index_b.chunks contains index_a's data — shared state detected."
+        assert index_b.chunks == new_chunks, (
+            "index_b.chunks contains index_a's data — shared state detected."
+        )
         # The astrophysics chunk must not appear in index_a
-        assert all(
-            c["doc_id"] != "d3" for c in index_a.chunks
-        ), "index_a.chunks contains index_b's doc_id 'd3' — shared state detected."
+        assert all(c["doc_id"] != "d3" for c in index_a.chunks), (
+            "index_a.chunks contains index_b's doc_id 'd3' — shared state detected."
+        )
 
     def test_rebuild_replaces_index_in_place(self, scroll_chunk_dicts):
         """Rebuilding the same instance should replace the previous index, not accumulate."""
@@ -144,9 +144,9 @@ class TestDualSparseIndexIndependence:
             f"After rebuild, index.chunks still contains old doc_ids {new_chunk_ids - {'d99'}}. "
             "build() appears to accumulate rather than replace the corpus."
         )
-        assert original_chunk_ids.isdisjoint(
-            new_chunk_ids
-        ), "Original doc_ids still present after rebuild — index was not replaced."
+        assert original_chunk_ids.isdisjoint(new_chunk_ids), (
+            "Original doc_ids still present after rebuild — index was not replaced."
+        )
 
 
 @pytest.mark.integration

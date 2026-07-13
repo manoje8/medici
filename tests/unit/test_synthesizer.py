@@ -504,12 +504,12 @@ class TestPromptInjectionFirewall:
 
         assert len(captured_prompts) == 1, "LLM should be called exactly once"
         prompt_sent = captured_prompts[0]
-        assert (
-            _FIREWALL_PREAMBLE in prompt_sent
-        ), f"Firewall preamble missing from '{category}' prompt"
-        assert (
-            "<retrieved_context>" in prompt_sent
-        ), f"XML context tag missing from '{category}' prompt"
+        assert _FIREWALL_PREAMBLE in prompt_sent, (
+            f"Firewall preamble missing from '{category}' prompt"
+        )
+        assert "<retrieved_context>" in prompt_sent, (
+            f"XML context tag missing from '{category}' prompt"
+        )
 
     @pytest.mark.asyncio
     async def test_chitchat_has_no_firewall_preamble(self):

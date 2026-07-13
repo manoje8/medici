@@ -4,7 +4,19 @@ from dataclasses import asdict
 from io import BytesIO
 from pathlib import Path
 
+import numpy as np
+
 from src.common.storage.base_storage import BaseStorage
+
+
+def to_serializable(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, (np.floating,)):  # noqa: UP038
+        return float(obj)
+    if isinstance(obj, (np.integer,)):  # noqa: UP038
+        return int(obj)
+    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
 
 class LocalStorage(BaseStorage):
@@ -30,7 +42,7 @@ class LocalStorage(BaseStorage):
             with open(target, "wb") as f:
                 shutil.copyfileobj(data, f)
         elif isinstance(data, list):
-            payload = json.dumps([asdict(c) for c in data]).encode("utf-8")
+            payload = json.dumps([asdict(c) for c in data], default=to_serializable).encode("utf-8")
             with open(target, "wb") as f:
                 shutil.copyfileobj(BytesIO(payload), f)
         else:

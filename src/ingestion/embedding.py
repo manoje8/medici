@@ -74,19 +74,30 @@ class EmbeddingService:
 
                 vector = response.embeddings[0].values
                 if self._cache is not None:
-                    await self._cache.put(text, vector)
+                    await self._cache.set(text, vector)
                 return vector
             except Exception as e:
                 if attempt == self.max_retries - 1:
-                    logfire.error(f"Embedding failed after {self.max_retries} attempts: {e}")
+                    logfire.error(
+                        "Embedding failed after {max_retries} attempts",
+                        max_retries=self.max_retries,
+                        error=str(e),
+                        text_length=len(text),
+                    )
                     raise
-                logfire.warning(f"Embedding attempt {attempt + 1} failed, retrying...")
+                logfire.warning(
+                    "Embedding attempt {attempt} failed, retrying...",
+                    attempt=attempt + 1,
+                    error=str(e),
+                    text_length=len(text),
+                )
                 await asyncio.sleep(self.retry_delay * (attempt + 1))
 
     async def embed_chunks(self, chunks: list[Chunk]) -> list[EmbeddedChunk]:
         """Embed a list of chunks in batches, skipping API calls for cached chunks."""
 
         if not chunks:
+            logfire.debug("No chunks to embed")
             return []
 
         result_map: dict[int, EmbeddedChunk] = {}
@@ -106,7 +117,12 @@ class EmbeddingService:
 
         cache_hits = len(result_map)
         if cache_hits:
-            logfire.info(f"EmbeddingCache: {cache_hits}/{len(chunks)} chunks served from cache")
+            logfire.info(
+                "Cache hit ratio: {hits}/{total} ({ratio:.1%})",
+                hits=cache_hits,
+                total=len(chunks),
+                ratio=cache_hits / len(chunks),
+            )
 
         uncached_chunks = [chunks[i] for i in uncached_indices]
 
@@ -119,8 +135,11 @@ class EmbeddingService:
                 end = start + self.batch_size
                 batch = uncached_chunks[start:end]
 
-                logfire.info(
-                    f"Embedding batch {batch_num + 1}/{total_batches} ({len(batch)} chunks)"
+                logfire.debug(
+                    "Embedding batch {batch_num}/{total_batches} ({batch_size} chunks)",
+                    batch_num=batch_num + 1,
+                    total_batches=total_batches,
+                    batch_size=len(batch),
                 )
 
                 for attempt in range(self.max_retries):
@@ -144,18 +163,35 @@ class EmbeddingService:
                             )
                             embedded_uncached.append(ec)
                             if self._cache is not None:
-                                await self._cache.put(chunk.text, emb.values)
+                                await self._cache.set(chunk.text, emb.values)
                         break
 
                     except Exception as e:
                         if attempt == self.max_retries - 1:
-                            logfire.error(f"Batch {batch_num + 1} failed: {e}")
+                            logfire.error(
+                                "Batch {batch_num} failed after {max_retries} attempts",
+                                batch_num=batch_num + 1,
+                                max_retries=self.max_retries,
+                                error=str(e),
+                                batch_size=len(batch),
+                            )
                             raise
+
+                        logfire.warning(
+                            "Batch {batch_num} attempt {attempt} failed, retrying...",
+                            batch_num=batch_num + 1,
+                            attempt=attempt + 1,
+                            error=str(e),
+                        )
                         await asyncio.sleep(self.retry_delay * (attempt + 1))
 
             for orig_idx, ec in zip(uncached_indices, embedded_uncached, strict=False):
                 result_map[orig_idx] = ec
 
         embedded = [result_map[i] for i in range(len(chunks))]
-        logfire.info(f"Embedding complete: {len(embedded)} vectors produced")
+        logfire.info(
+            "Embedding complete: {total} vectors, {unique} unique from cache",
+            total=len(embedded),
+            unique=len(embedded) - cache_hits,
+        )
         return embedded

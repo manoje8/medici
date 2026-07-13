@@ -161,9 +161,9 @@ class TestSemaphoreConcurrency:
         chunks = [_make_chunk(text=f"chunk {i}") for i in range(_GRADE_CONCURRENCY * 3)]
         await grader._grade_chunks_batch(chunks, "query", [])
 
-        assert (
-            max_concurrent <= _GRADE_CONCURRENCY
-        ), f"High-water concurrent calls was {max_concurrent}, expected ≤ {_GRADE_CONCURRENCY}"
+        assert max_concurrent <= _GRADE_CONCURRENCY, (
+            f"High-water concurrent calls was {max_concurrent}, expected ≤ {_GRADE_CONCURRENCY}"
+        )
 
     @pytest.mark.asyncio
     async def test_all_chunks_are_graded_despite_semaphore(self):

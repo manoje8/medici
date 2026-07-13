@@ -34,7 +34,9 @@ from src.common.services.qdrant import QdrantStorageService
 from src.common.services.reranker import Reranker
 from src.common.utils.config import config
 from src.common.utils.helper import check_env, has_internet
+from src.common.utils.tokenizer import TikTokenTokenizer
 from src.ingestion.embedding import EmbeddingService
+from src.ingestion.processor import Processor
 
 
 @asynccontextmanager
@@ -65,12 +67,9 @@ async def lifespan(app: FastAPI):
 
         emb_cache: EmbeddingCache | None = None
         if config.EMBEDDING_CACHE_ENABLED:
-            emb_cache = EmbeddingCache(
-                dsn=config.POSTGRES_CONN_STRING,
-                max_entries=config.EMBEDDING_CACHE_MAX_ENTRIES,
+            emb_cache = await EmbeddingCache.create(
+                dsn=config.POSTGRES_CONN_STRING, max_entries=50_000
             )
-            closers.append(("embedding cache", lambda: emb_cache.close() or asyncio.sleep(0)))
-            logfire.info("EmbeddingCache enabled", stats=emb_cache.stats())
 
         embedding_service = EmbeddingService(
             model_name=config.EMBEDDING_MODEL_NAME,
@@ -78,12 +77,16 @@ async def lifespan(app: FastAPI):
             batch_size=config.EMBEDDING_BATCH_SIZE,
             cache=emb_cache,
         )
+
         storage_service = QdrantStorageService(
             url=config.QDRANT_CLUSTER_ENDPOINT,
             vector_size=embedding_service.vector_size,
             collection_name=config.QDRANT_COLLECTION_NAME,
         )
         closers.append(("qdrant client", storage_service.client.close))
+
+        tokenizer = TikTokenTokenizer()
+        processor = Processor(tokenizer, embedding_service, storage_service)
 
         hybrid_search = HybridSearch(
             storage_service=storage_service, embedding_service=embedding_service
@@ -129,6 +132,7 @@ async def lifespan(app: FastAPI):
         app.state.pipeline = pipeline
         app.state.pool = pool
         app.state.qdrant = storage_service
+        app.state.processor = processor
 
     except Exception:
         logfire.error("Startup failed; rolling back partially-initialized resources")
@@ -141,6 +145,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         app.state.pipeline = None
+        app.state.processor = None
         for name, close in reversed(closers):
             try:
                 await close()

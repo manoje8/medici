@@ -2,13 +2,14 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi.params import Depends
 from pydantic import BaseModel
 
 from src.api.config_api import config_api
 from src.api.constants_api import ALLOWED_CONTENT_TYPES
+from src.api.deps import get_processor
 from src.common.utils.constants import ParseMethod
 from src.common.utils.helper import supported_extensions_list
-from src.common.utils.tokenizer import TikTokenTokenizer
 from src.ingestion.processor import Processor
 
 INGESTION_ROOT = Path(config_api.INGESTION_ROOT).resolve()
@@ -24,16 +25,17 @@ class IngestionRequest(BaseModel):
 def create_document_routes():
     router = APIRouter(tags=["document"])
 
-    tokenizer = TikTokenTokenizer()
-    processor = Processor(tokenizer)
-
     @router.post("/ingestion")
     async def ingestion(
         file: UploadFile = File(...),
         parse_method: ParseMethod = Form(...),
         doc_id: str | None = Form(None),
+        processor: Processor = Depends(get_processor),
     ):
-        if file.content_type not in ALLOWED_CONTENT_TYPES:
+        if (
+            parse_method == ParseMethod.GOOGLE_DOC_AI
+            and file.content_type not in ALLOWED_CONTENT_TYPES
+        ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Unsupported content type: {file.content_type}",
@@ -69,7 +71,7 @@ def create_document_routes():
         )
 
     @router.post("/bulk-ingestion")
-    async def bulk_ingestion(body: IngestionRequest):
+    async def bulk_ingestion(body: IngestionRequest, processor: Processor = Depends(get_processor)):
         return await processor.ingest_documents(
             file_paths=[body.path], parse_method=body.parse_method
         )

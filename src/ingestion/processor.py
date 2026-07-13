@@ -32,18 +32,15 @@ from src.ingestion.parser.google_doc_ai import GoogleDocAI
 
 class Processor:
     def __init__(
-        self, tokenizer: Tokenizer, cache_dir: str | None = None, max_concurrency: int = 4
+        self,
+        tokenizer: Tokenizer,
+        embedding_service: EmbeddingService,
+        storage_service: QdrantStorageService,
+        cache_dir: str | None = None,
+        max_concurrency: int = 4,
     ):
-        self.embedding_service = EmbeddingService(
-            model_name=config.EMBEDDING_MODEL_NAME,
-            dimensions=config.EMBEDDING_DIMENSIONS,
-            batch_size=config.EMBEDDING_BATCH_SIZE,
-        )
-        self.storage_service = QdrantStorageService(
-            url=config.QDRANT_CLUSTER_ENDPOINT,
-            collection_name=config.QDRANT_COLLECTION_NAME,
-            vector_size=self.embedding_service.vector_size,
-        )
+        self.embedding_service = embedding_service
+        self.storage_service = storage_service
 
         self._cache = DocumentCache(
             cache_dir=(Path(cache_dir) if hasattr(config, "cache_dir") else config.CACHE_DIR)
@@ -204,7 +201,7 @@ class Processor:
         enriched = build_parent_child_chunk(chunks, self.tokenizer)
         logfire.info(f"Build parent child chunk: {len(enriched)}")
 
-        return chunks
+        return enriched
 
     async def process_document(
         self,

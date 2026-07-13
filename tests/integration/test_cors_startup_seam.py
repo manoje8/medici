@@ -53,9 +53,9 @@ class TestCORSStartupValidConfigurations:
         app = _create_app_with_cors("*")
         # FastAPI wraps all middleware as generic 'Middleware' entries;
         # the meaningful check is that at least one middleware was added at all.
-        assert (
-            len(app.user_middleware) >= 1
-        ), "No middleware registered. CORSMiddleware add_middleware() call may have failed."
+        assert len(app.user_middleware) >= 1, (
+            "No middleware registered. CORSMiddleware add_middleware() call may have failed."
+        )
 
     def test_comma_separated_origins_are_split_correctly(self):
         """
