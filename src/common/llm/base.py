@@ -29,11 +29,6 @@ class LLMContentError(Exception):
         super().__init__(f"LLM content error: {reason}")
 
 
-# Exceptions that will NEVER succeed on retry — fail fast without burning the
-# retry budget or adding unnecessary backoff latency.
-#
-# Transient errors (5xx server faults, 429 rate-limit, asyncio.TimeoutError)
-# are intentionally excluded so they continue to be retried.
 _NON_RETRYABLE_LLM_EXCEPTIONS = (
     _gexc.InvalidArgument,  # 400 – malformed prompt or generation config
     _gexc.PermissionDenied,  # 403 – quota exceeded or API key lacks access

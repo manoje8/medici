@@ -5,7 +5,12 @@ from pathlib import Path
 
 import logfire
 
+from src.common.cache.embedding_cache import EmbeddingCache
+from src.common.services.qdrant import QdrantStorageService
+from src.common.utils.config import config
+from src.common.utils.constants import ParseMethod
 from src.common.utils.tokenizer import TikTokenTokenizer
+from src.ingestion.embedding import EmbeddingService
 from src.ingestion.processor import Processor
 
 
@@ -21,7 +26,7 @@ def parse_args():
     )
     parse_parser.add_argument("file_path", type=str, help="Path to the input document.")
     parse_parser.add_argument("--output-dir", type=str, default=None)
-    parse_parser.add_argument("--parse-method", type=str, default=None)
+    parse_parser.add_argument("--parse-method", type=str, default=ParseMethod.DOCLING)
     parse_parser.add_argument("--display-stats", action="store_true")
     parse_parser.add_argument("--split-by-character", type=str, default=None)
     parse_parser.add_argument("--split-by-character-only", type=str, default=None)
@@ -34,7 +39,7 @@ def parse_args():
         help="Parse, embed, and store a document in Qdrant.",
     )
     ingest_parser.add_argument("file_path", type=str, help="Path to the input document.")
-    ingest_parser.add_argument("--parse-method", type=str, default=None)
+    ingest_parser.add_argument("--parse-method", type=str, default=ParseMethod.DOCLING)
     ingest_parser.add_argument("--split-by-character", type=str, default=None)
 
     ingest_parser.add_argument(
@@ -72,8 +77,23 @@ def parse_args():
 async def main():
     logfire.configure(service_name="PROCESS CLI")
     args = parse_args()
+
+    emb_cache = await EmbeddingCache.create(dsn=config.POSTGRES_CONN_STRING, max_entries=50_000)
+
+    embedding_service = EmbeddingService(
+        model_name=config.EMBEDDING_MODEL_NAME,
+        dimensions=config.EMBEDDING_DIMENSIONS,
+        batch_size=config.EMBEDDING_BATCH_SIZE,
+        cache=emb_cache,
+    )
+
+    storage_service = QdrantStorageService(
+        url=config.QDRANT_CLUSTER_ENDPOINT,
+        vector_size=embedding_service.vector_size,
+        collection_name=config.QDRANT_COLLECTION_NAME,
+    )
     tokenizer = TikTokenTokenizer()
-    processor = Processor(tokenizer)
+    processor = Processor(tokenizer, embedding_service, storage_service)
 
     if args.command == "parse":
         output_dir = str(Path(args.output_dir)) if args.output_dir else None
@@ -103,7 +123,6 @@ async def main():
         result = await processor.ingest_document(
             file_path=args.file_path,
             doc_id=args.doc_id,
-            chunking_strategy=args.chunking_strategy,
             parse_method=args.parse_method,
         )
         print(
@@ -112,14 +131,6 @@ async def main():
             f"chunks={result['chunks_produced']}, "
             f"vectors stored={result['vectors_stored']}"
         )
-
-    elif args.command == "query":
-        results = await processor.query(
-            question=args.question,
-            top_k=args.top_k,
-            doc_id_filter=args.doc_id_filter,
-        )
-        print(json.dumps(results, indent=2, default=str))
 
 
 if __name__ == "__main__":

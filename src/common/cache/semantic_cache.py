@@ -41,24 +41,24 @@ import re
 import struct
 import time
 from dataclasses import dataclass
+from typing import Any
 
 import logfire
 import redis.asyncio as aioredis
 
 from src.common.utils.config import config
 
-
-@dataclass
-class CacheResult:
-    answer: str
-    sources: list[str]
-    token_usage: dict
-    similarity: float  # 1.0 for exact match
-    cache_key: str
-
-
 _INDEX_KEY = "sqc:index"
 _ENTRY_PREFIX = "sqc:"
+
+
+@dataclass(frozen=True)
+class CacheEntry:
+    answer: str
+    sources: list[str]
+    token_usage: dict[str, Any]
+    similarity: float  # 1.0 for exact match
+    cache_key: str
 
 
 class SemanticQueryCache:
@@ -95,7 +95,7 @@ class SemanticQueryCache:
         self.ttl = ttl_seconds
         self.max_entries = max_entries
 
-    async def lookup(self, query: str) -> CacheResult | None:
+    async def lookup(self, query: str) -> CacheEntry | None:
         """Return a cached result for ``query`` or ``None`` on miss."""
 
         normalised = self._normalize(query)
@@ -244,14 +244,14 @@ class SemanticQueryCache:
             return None
         return self._unpack_vector(raw)
 
-    async def _fetch_entry(self, key: str, similarity: float) -> CacheResult | None:
+    async def _fetch_entry(self, key: str, similarity: float) -> CacheEntry | None:
         data = await self._redis.hgetall(f"{_ENTRY_PREFIX}{key}")
         if not data:
             return None
         answer = data.get(b"answer", b"").decode()
         sources = json.loads(data.get(b"sources", b"[]").decode())
         token_usage = json.loads(data.get(b"token_usage", b"{}").decode())
-        return CacheResult(
+        return CacheEntry(
             answer=answer,
             sources=sources,
             token_usage=token_usage,

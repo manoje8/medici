@@ -15,6 +15,7 @@ class GraphPipeline:
 
     async def chat(self, user_message: str, session_id: str, user_id: str) -> dict:
         if not session_id:
+            logfire.info("Creating new session...")
             session_id = f"{user_id}_{uuid.uuid4()}"
 
         session: ConversationSession = await self.short_term.get_session(session_id)

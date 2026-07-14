@@ -126,14 +126,12 @@ class HybridSearch:
             )
             return []
 
-        # best: dict[tuple, dict] = {}
-        # for item in flat:
-        #     key = (item.get("doc_id"), item.get("chunk_index"))
-        #     if key not in best or (item.get("score") or 0) > (best[key].get("score") or 0):
-        #         best[key] = item
-
-        final = sorted(flat, key=lambda d: d.get("score") or 0, reverse=True)[: self.top_k]
-
+        best: dict[tuple, dict] = {}
+        for item in flat:
+            key = (item.get("doc_id"), item.get("chunk_index"))
+            if key not in best or (item.get("score") or 0) > (best[key].get("score") or 0):
+                best[key] = item
+        final = sorted(best.values(), key=lambda d: d.get("score") or 0, reverse=True)[: self.top_k]
         logfire.info(
             "hybrid_search_complete",
             num_unique_candidates=len(final),
