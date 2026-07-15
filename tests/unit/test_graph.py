@@ -635,10 +635,69 @@ class TestSynthesizeNode:
 class TestRouteAfterClassify:
     """Tests for the route_after_classify edge."""
 
-    def test_always_returns_plan(self):
-        for category in ["meta", "chitchat"]:
-            state = _base_state(question_category=category)
-            assert route_after_classify(state) == "simple_response"
+    # --- chitchat / meta → simple_response (no retrieval) ---
+    def test_chitchat_routes_to_simple_response(self):
+        state = _base_state(question_category="chitchat")
+        assert route_after_classify(state) == "simple_response"
+
+    def test_meta_routes_to_simple_response(self):
+        state = _base_state(question_category="meta")
+        assert route_after_classify(state) == "simple_response"
+
+    # --- factual (all complexity levels) → plan ---
+    def test_simple_factual_complexity_1_routes_to_plan(self):
+        """Regression: simple factual queries must NOT bypass retrieval via direct_synthesize."""
+        state = _base_state(
+            question_category="factual",
+            classification={"complexity_level": 1},
+        )
+        assert route_after_classify(state) == "plan"
+
+    def test_simple_factual_complexity_2_routes_to_plan(self):
+        """Regression: complexity=2 factual queries must NOT bypass retrieval."""
+        state = _base_state(
+            question_category="factual",
+            classification={"complexity_level": 2},
+        )
+        assert route_after_classify(state) == "plan"
+
+    def test_complex_factual_routes_to_plan(self):
+        state = _base_state(
+            question_category="factual",
+            classification={"complexity_level": 4},
+        )
+        assert route_after_classify(state) == "plan"
+
+    # --- other retrieval-needing categories → plan ---
+    def test_analytical_routes_to_plan(self):
+        state = _base_state(question_category="analytical")
+        assert route_after_classify(state) == "plan"
+
+    def test_comparative_routes_to_plan(self):
+        state = _base_state(question_category="comparative")
+        assert route_after_classify(state) == "plan"
+
+    def test_procedural_routes_to_plan(self):
+        state = _base_state(question_category="procedural")
+        assert route_after_classify(state) == "plan"
+
+    # --- summarization ---
+    def test_summarization_without_conversational_keywords_routes_to_plan(self):
+        state = _base_state(
+            question_category="summarization",
+            original_message="Summarize the quarterly report",
+        )
+        assert route_after_classify(state) == "plan"
+
+    def test_summarization_with_conversational_keywords_routes_to_synthesize(self):
+        for keyword in ["previous", "discussed", "conversation", "recap", "summarize our"]:
+            state = _base_state(
+                question_category="summarization",
+                original_message=f"Can you {keyword} what we talked about?",
+            )
+            assert route_after_classify(state) == "synthesize", (
+                f"keyword '{keyword}' should route to synthesize"
+            )
 
 
 # Edge: route_after_retrieve

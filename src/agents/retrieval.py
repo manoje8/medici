@@ -70,8 +70,10 @@ Use "exhausted" if the information is likely not in this document.
         original_question: str,
         doc_id_filter: str | None = None,
         round_no: int = 0,
+        use_expansion: bool = True,
+        use_rerank: bool = True,
     ) -> list[dict]:
-        if round_no == 0:
+        if round_no == 0 and use_expansion:
             expanded_queries = await self.query_expand.expand(query)
         else:
             expanded_queries = [query]
@@ -81,6 +83,9 @@ Use "exhausted" if the information is likely not in this document.
             candidates = await self.hybrid_search.search(
                 queries=expanded_queries, doc_id_filter=doc_id_filter
             )
+
+        if not use_rerank:
+            return candidates[: self.reranker.top_k]
 
         with logfire.span("reranking", num_candidates=len(candidates)):
             rerank_results = await self.reranker.rerank(

@@ -12,15 +12,18 @@ _MAX_REFINEMENT_LOOPS = 1
 
 
 def route_after_classify(state: State) -> str:
+    """Route the query after classification.
+
+    Routing table
+    -------------
+    chitchat / meta          → simple_response  (no retrieval)
+    summarization (conv.)    → synthesize        (history only, no retrieval)
+    everything else          → plan              (full retrieve → grade → synthesize)
+    """
     category = state.get("question_category", "factual").lower()
-    classify = state.get("classification", {})
 
     if category in ["chitchat", "meta"]:
         return "simple_response"
-    if category == "factual":
-        complexity = classify.get("complexity_level", 1)
-        if complexity <= 2:
-            return "direct_synthesize"
     if category == "summarization":
         msg = state.get("original_message", "").lower()
         if any(

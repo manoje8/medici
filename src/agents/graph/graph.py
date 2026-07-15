@@ -62,7 +62,6 @@ def build_rag_graph(
         route_after_classify,
         {
             "plan": "plan",
-            "direct_synthesize": "direct_synthesize",
             "simple_response": "handle_simple_response",
             "synthesize": "synthesize",
         },
