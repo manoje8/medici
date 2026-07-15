@@ -1,5 +1,5 @@
 # Build:  docker build -f Dockerfile.ui -t studious-ui .
-# Run:    docker run -p 8501:8501 -e BACKEND_URL=http://server:8000 studious-ui
+# Run:    docker run -p 8501:8501 -e BACKEND_URL=http://0.0.0.0:8000 studious-ui
 
 FROM python:3.12-slim AS base
 
@@ -28,7 +28,7 @@ RUN useradd --create-home --uid 1000 appuser \
 
 USER appuser
 
-ENV BACKEND_URL=http://localhost:8000 \
+ENV BACKEND_URL=http://0.0.0.0:8000 \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     STREAMLIT_SERVER_HEADLESS=true \
@@ -37,6 +37,6 @@ ENV BACKEND_URL=http://localhost:8000 \
 EXPOSE 8501
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD curl -fsS http://localhost:8501/_stcore/health || exit 1
+    CMD curl -fsS http://0.0.0.0:8501/_stcore/health || exit 1
 
 CMD ["streamlit", "run", "web_ui/main.py", "--server.address=0.0.0.0", "--server.port=8501"]

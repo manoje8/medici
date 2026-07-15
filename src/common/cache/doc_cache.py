@@ -14,15 +14,16 @@ class DocumentCache:
     Filesystem-backed cache for parsed document content.
     """
 
-    def __init__(self, cache_dir: Path = config.CACHE_DIR):
+    def __init__(self, cache_dir: Path = config.CACHE_DIR, manifest_path: Path | None = None):
         self.cache_dir = cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self._manifest_path = manifest_path or (self.cache_dir / "manifest.json")
         self._manifest: dict = self._load_manifest()
 
     def _load_manifest(self) -> dict:
-        if config.CACHE_MANIFEST.exists():
+        if self._manifest_path.exists():
             try:
-                return json.loads(config.CACHE_MANIFEST.read_text(encoding="utf-8"))
+                return json.loads(self._manifest_path.read_text(encoding="utf-8"))
             except json.JSONDecodeError:
                 logfire.error("Cache - Manifest corrupted, starting fresh")
 
@@ -49,7 +50,8 @@ class DocumentCache:
             self._save_manifest()
 
     def _save_manifest(self) -> None:
-        config.CACHE_MANIFEST.write_text(
+        self._manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        self._manifest_path.write_text(
             json.dumps(self._manifest, indent=2, ensure_ascii=False), encoding="utf-8"
         )
 

@@ -14,13 +14,8 @@ import gzip
 import json
 import os
 from pathlib import Path
-from unittest.mock import patch
 
 from src.common.cache.doc_cache import DocumentCache
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 DUMMY_CONTENT = [{"type": "text", "text": "hello world"}]
 PARSE_METHOD = "docling"
@@ -34,13 +29,7 @@ def _write_file(path: Path, data: bytes) -> None:
 
 def _make_cache(tmp_path: Path) -> DocumentCache:
     """Return a DocumentCache whose manifest and .gz files live in *tmp_path*."""
-    with (
-        patch("src.common.cache.doc_cache.config") as mock_cfg,
-        patch("src.common.utils.config.config"),  # silence env reads
-    ):
-        mock_cfg.CACHE_DIR = tmp_path
-        mock_cfg.CACHE_MANIFEST = tmp_path / "manifest.json"
-        return DocumentCache(cache_dir=tmp_path)
+    return DocumentCache(cache_dir=tmp_path)
 
 
 # ---------------------------------------------------------------------------
