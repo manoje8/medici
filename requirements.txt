@@ -63,3 +63,5 @@ ascii_colors
 pyyaml
 
 tenacity
+bcrypt
+pyjwt

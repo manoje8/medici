@@ -1,0 +1,42 @@
+# Build:  docker build -f Dockerfile.ui -t studious-ui .
+# Run:    docker run -p 8501:8501 -e BACKEND_URL=http://server:8000 studious-ui
+
+FROM python:3.12-slim AS base
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY pyproject.toml README.md ./
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir \
+        streamlit \
+        requests \
+        python-dotenv \
+        logfire
+
+COPY src ./src
+COPY web_ui ./web_ui
+
+RUN pip install --no-cache-dir -e . --no-deps
+
+RUN useradd --create-home --uid 1000 appuser \
+    && mkdir -p /app/data \
+    && chown -R appuser:appuser /app
+
+USER appuser
+
+ENV BACKEND_URL=http://localhost:8000 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    STREAMLIT_SERVER_HEADLESS=true \
+    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+
+EXPOSE 8501
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD curl -fsS http://localhost:8501/_stcore/health || exit 1
+
+CMD ["streamlit", "run", "web_ui/main.py", "--server.address=0.0.0.0", "--server.port=8501"]

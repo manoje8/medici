@@ -1,0 +1,44 @@
+# Build:  docker build -f Dockerfile.server -t studious-server .
+# Run:    docker run -p 8000:8000 --env-file .env studious-server
+
+
+FROM python:3.12-slim AS base
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt pyproject.toml README.md ./
+
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
+
+COPY src ./src
+RUN pip install --no-cache-dir -e . --no-deps
+
+RUN useradd --create-home --uid 1000 appuser
+
+ENV INGESTION_ROOT=/app/data/ingestion
+
+RUN mkdir -p "$INGESTION_ROOT" /app/.cache/sparse /flashrank \
+    && chown -R appuser:appuser /app /flashrank
+
+USER appuser
+
+ENV HOST=0.0.0.0 \
+    PORT=8000 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://localhost:8000/health || exit 1
+
+
+CMD ["python", "src/api/main.py"]

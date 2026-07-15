@@ -70,7 +70,7 @@ with st.sidebar:
         if st.button("Upload Document", type="primary", use_container_width=True):
             with st.spinner(f"Uploading {uploaded_file.name}..."):
                 try:
-                    temp_dir = Path("data")
+                    temp_dir = Path("../data")
                     temp_dir.mkdir(exist_ok=True)
                     temp_path = temp_dir / uploaded_file.name
                     with open(temp_path, "wb") as f:

@@ -1,4 +1,5 @@
-.PHONY: help lint format isort server-run ui-run test clean
+.PHONY: help lint format isort server-run ui-run test clean \
+        docker-build docker-up docker-down docker-logs docker-restart docker-clean
 
 
 help:
@@ -19,7 +20,7 @@ server-run:
 	python src/api/main.py
 
 ui-run:
-	streamlit run web_ui/main.py
+	streamlit run main.py
 
 test:
 	pytest tests/ -v --tb=short
@@ -30,3 +31,22 @@ clean:
 	find . -type d -name ".pytest_cache" -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
 	find . -type f -name "*.pyo" -delete
+
+
+docker-build:
+	docker compose build
+
+docker-up:
+	docker compose up -d
+
+docker-down:
+	docker compose down
+
+docker-logs:
+	docker compose logs -f
+
+docker-restart:
+	docker compose restart
+
+docker-clean:
+	docker compose down -v --remove-orphans
