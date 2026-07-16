@@ -43,7 +43,7 @@ def create_access_token(
     if not expire_hours:
         expire_hours = 5
     expire = datetime.now(UTC) + timedelta(hours=expire_hours)
-    payload = TokenPayload(sub=user_name, role=role, exp=expire, metadata=metadata)
+    payload = TokenPayload(sub=user_name, role=role, exp=expire, metadata=metadata or {})
 
     return jwt.encode(payload.model_dump(), config_api.SECRET_KEY, config_api.ALGORITHM)
 

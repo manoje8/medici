@@ -1,13 +1,13 @@
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
-from fastapi.params import Depends
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.params import Depends  # noqa: F811 – re-export keeps IDE happy
 from pydantic import BaseModel
 
 from src.api.config_api import config_api
 from src.api.constants_api import ALLOWED_CONTENT_TYPES
-from src.api.deps import get_processor
+from src.api.deps import get_processor, require_auth
 from src.common.utils.constants import ParseMethod
 from src.common.utils.helper import supported_extensions_list
 from src.ingestion.processor import Processor
@@ -17,7 +17,7 @@ INGESTION_ROOT.mkdir(parents=True, exist_ok=True)
 
 
 class IngestionRequest(BaseModel):
-    path: str | Path
+    path: str
     parse_method: ParseMethod
     doc_id: str | None = None
 
@@ -31,6 +31,7 @@ def create_document_routes():
         parse_method: ParseMethod = Form(...),
         doc_id: str | None = Form(None),
         processor: Processor = Depends(get_processor),
+        _auth: dict = Depends(require_auth),
     ):
         if (
             parse_method == ParseMethod.GOOGLE_DOC_AI
@@ -71,9 +72,27 @@ def create_document_routes():
         )
 
     @router.post("/bulk-ingestion")
-    async def bulk_ingestion(body: IngestionRequest, processor: Processor = Depends(get_processor)):
+    async def bulk_ingestion(
+        body: IngestionRequest,
+        processor: Processor = Depends(get_processor),
+        _auth: dict = Depends(require_auth),
+    ):
+        try:
+            requested = Path(body.path).resolve()
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid path",
+            ) from exc
+
+        if not requested.is_relative_to(INGESTION_ROOT):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Path is outside the allowed ingestion root",
+            )
+
         return await processor.ingest_documents(
-            file_paths=[body.path], parse_method=body.parse_method
+            file_paths=[str(requested)], parse_method=body.parse_method
         )
 
     return router

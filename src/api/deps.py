@@ -1,7 +1,11 @@
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from src.agents.graph.runner import GraphPipeline
+from src.api.utils_api import validate_token
 from src.ingestion.processor import Processor
+
+_bearer = HTTPBearer(auto_error=False)
 
 
 def get_pipeline(request: Request) -> GraphPipeline:
@@ -16,3 +20,34 @@ def get_processor(request: Request) -> Processor:
     if not processor:
         raise HTTPException(status_code=503, detail="Processor not initialized")
     return processor
+
+
+def require_auth(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> dict:
+    """
+    FastAPI dependency: validate Bearer JWT; return decoded payload.
+
+    Raises HTTP 401 when the header is absent or the token is invalid/expired.
+    """
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return validate_token(credentials.credentials)
+
+
+def require_admin(token_payload: dict = Depends(require_auth)) -> dict:
+    """
+    FastAPI dependency: require a valid JWT **with role='admin'**.
+
+    Raises HTTP 403 when the authenticated user's role is not 'admin'.
+    """
+    if token_payload.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required",
+        )
+    return token_payload

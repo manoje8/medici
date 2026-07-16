@@ -314,7 +314,20 @@ class TestQdrantStorageService:
             ec.chunk.doc_id = doc_id
             ec.chunk.chunk_index = chunk_index
             ec.chunk.text = text
+            ec.model_name = "text-embedding-004"
             ec.vector = [0.1, 0.2, 0.3, 0.4]
+            # Return a realistic payload dict that mirrors Chunk.to_quant_payload()
+            ec.chunk.to_quant_payload.return_value = {
+                "text": text,
+                "chunk_index": chunk_index,
+                "doc_id": doc_id,
+                "source_file": "test.pdf",
+                "chunk_type": "text",
+                "section_title": "Section",
+                "page_numbers": [1],
+                "token_count": 10,
+                "metadata": {},
+            }
             return ec
 
         return _make
@@ -358,6 +371,40 @@ class TestQdrantStorageService:
 
         # tenacity retries 3 times total before re-raising
         assert mock_client.upsert.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_upsert_payload_contains_doc_id_and_chunk_index(
+        self, service, mock_client, make_embedded_chunk
+    ):
+        """Regression: every upserted PointStruct must carry doc_id and chunk_index.
+
+        Before the fix, payload was hardcoded to {"text": ...} only.  Qdrant then
+        returned points whose payload had no doc_id / chunk_index, causing
+        HybridSearch to collapse all chunks to the same de-duplication key
+        ('', None) and return at most one result regardless of top_k.
+        """
+        mock_client.collection_exists.return_value = False
+
+        chunks = [
+            make_embedded_chunk(doc_id="docA", chunk_index=0),
+            make_embedded_chunk(doc_id="docA", chunk_index=1),
+            make_embedded_chunk(doc_id="docB", chunk_index=0),
+        ]
+        await service.upsert_embedded_chunks(chunks)
+
+        # Gather every PointStruct from every upsert call
+        all_points = []
+        for call in mock_client.upsert.call_args_list:
+            all_points.extend(call.kwargs["points"])
+
+        assert len(all_points) == 3, "All three chunks must be upserted"
+        for point in all_points:
+            assert "doc_id" in point.payload, "payload must contain doc_id"
+            assert "chunk_index" in point.payload, "payload must contain chunk_index"
+
+        # Ensure the three payloads carry distinct identities
+        keys = {(p.payload["doc_id"], p.payload["chunk_index"]) for p in all_points}
+        assert len(keys) == 3, "Each chunk must have a unique (doc_id, chunk_index) pair"
 
     # --- search ---
 

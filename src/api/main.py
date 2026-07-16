@@ -23,6 +23,7 @@ from src.agents.graph.graph import compile_graph_with_postgres
 from src.agents.graph.runner import GraphPipeline
 from src.agents.memory.short_term import ShortTermMemoryManager
 from src.agents.retrieval import RetrievalAgent
+from src.api.config_api import config_api as _config_api
 from src.api.routers.document_routes import create_document_routes
 from src.api.routers.query_router import create_query_routes
 from src.common.cache.embedding_cache import EmbeddingCache
@@ -52,6 +53,8 @@ async def lifespan(app: FastAPI):
     closers: list[tuple[str, Callable[[], Awaitable[None]]]] = []
 
     try:
+        _config_api.validate()
+
         await pool.open()
         await asyncio.wait_for(pool.wait(), timeout=10)
         closers.append(("postgres pool", pool.close))

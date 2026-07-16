@@ -159,7 +159,10 @@ class QdrantStorageService:
                         "dense": ec.vector,
                         "sparse": Document(text=ec.chunk.text, model=config.QDRANT_SPARSE_MODEL),
                     },
-                    payload={"text": ec.chunk.text},
+                    payload={
+                        **ec.chunk.to_quant_payload(),
+                        "embedding_model": ec.model_name,
+                    },
                 )
                 for ec in batch
             ]

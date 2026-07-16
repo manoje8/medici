@@ -132,7 +132,7 @@ class EmbeddingCache:
         found = {row["text_hash"]: _unpack(row["embedding"]) for row in rows}
 
         self._hits += len(found)
-        self._misses = len(hashes) - len(found)
+        self._misses += len(hashes) - len(found)
 
         if found:
             self._touch_async(list(found.keys()))
