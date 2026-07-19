@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from src.agents.graph.runner import GraphPipeline
-from src.api.deps import get_pipeline, require_auth
+from src.api.deps import get_pipeline
 
 
 class QueryRequest(BaseModel):
@@ -19,7 +19,7 @@ def create_query_routes(api_key: str | None = None, top_k: int = 60):
     async def create_query(
         body: QueryRequest,
         pipeline: GraphPipeline = Depends(get_pipeline),
-        _auth: dict = Depends(require_auth),
+        # _auth: dict = Depends(require_auth),
     ):
         result = await pipeline.chat(
             user_message=body.question,

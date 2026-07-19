@@ -67,34 +67,13 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
+          pip install -r requirements.txt
           pip install \
-            pytest pytest-cov pytest-asyncio anyio \
-            httpx \
-            pydantic>=2.0.0 \
-            python-dotenv \
-            loguru \
-            logfire \
-            docling \
-            trafilatura \
-            google-genai \
-            qdrant-client[fastembed] \
-            rank-bm25 \
-            numpy \
-            ascii_colors \
-            tiktoken \
-            google-cloud-storage \
-            flashrank \
-            langchain-text-splitters \
-            fastapi \
-            uvicorn[standard] \
-            tenacity \
-            redis \
-            langgraph \
-            langchain \
-            psycopg[binary] \
-            psycopg-pool \
-            groq \
-            asyncpg
+            pytest \
+            pytest-cov \
+            pytest-asyncio \
+            anyio \
+            httpx
 
       - name: Install project in editable mode
         run: pip install -e .
@@ -154,34 +133,13 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
+          pip install -r requirements.txt
           pip install \
-            pytest pytest-asyncio anyio \
-            httpx \
-            pydantic>=2.0.0 \
-            python-dotenv \
-            loguru \
-            logfire \
-            docling \
-            trafilatura \
-            google-genai \
-            qdrant-client[fastembed] \
-            rank-bm25 \
-            numpy \
-            ascii_colors \
-            tiktoken \
-            google-cloud-storage \
-            flashrank \
-            langchain-text-splitters \
-            fastapi \
-            uvicorn[standard] \
-            tenacity \
-            redis \
-            langgraph \
-            langchain \
-            psycopg[binary] \
-            psycopg-pool \
-            groq \
-            asyncpg
+            pytest \
+            pytest-cov \
+            pytest-asyncio \
+            anyio \
+            httpx
 
       - name: Install project in editable mode
         run: pip install -e .

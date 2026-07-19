@@ -2,7 +2,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from src.agents.graph.runner import GraphPipeline
-from src.api.utils_api import validate_token
+from src.api.auth import auth_handler
 from src.ingestion.processor import Processor
 
 _bearer = HTTPBearer(auto_error=False)
@@ -34,9 +34,9 @@ def require_auth(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing Authorization header",
-            headers={"WWW-Authenticate": "Bearer"},
+            headers={"WWW-Authenticate": "bearer"},
         )
-    return validate_token(credentials.credentials)
+    return auth_handler.validate_token(credentials.credentials)
 
 
 def require_admin(token_payload: dict = Depends(require_auth)) -> dict:

@@ -2,7 +2,6 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from fastapi.params import Depends  # noqa: F811 – re-export keeps IDE happy
 from pydantic import BaseModel
 
 from src.api.config_api import config_api
@@ -31,7 +30,7 @@ def create_document_routes():
         parse_method: ParseMethod = Form(...),
         doc_id: str | None = Form(None),
         processor: Processor = Depends(get_processor),
-        _auth: dict = Depends(require_auth),
+        # _auth: dict = Depends(require_auth),
     ):
         if (
             parse_method == ParseMethod.GOOGLE_DOC_AI

@@ -6,10 +6,11 @@ from contextlib import asynccontextmanager
 
 import logfire
 import uvicorn
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.requests import Request
 from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordRequestForm
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
@@ -23,6 +24,7 @@ from src.agents.graph.graph import compile_graph_with_postgres
 from src.agents.graph.runner import GraphPipeline
 from src.agents.memory.short_term import ShortTermMemoryManager
 from src.agents.retrieval import RetrievalAgent
+from src.api.auth import auth_handler
 from src.api.config_api import config_api as _config_api
 from src.api.routers.document_routes import create_document_routes
 from src.api.routers.query_router import create_query_routes
@@ -196,6 +198,58 @@ def create_apps():
 
     app.include_router(create_document_routes())
     app.include_router(create_query_routes())
+
+    @app.get("/auth-status")
+    async def get_auth_status():
+        if not auth_handler.accounts:
+            guest_token = auth_handler.create_access_token(
+                user_name="guest", role="guest", metadata={"auth_mode": False}
+            )
+
+            return {
+                "auth_configured": False,
+                "access_token": guest_token,
+                "token_type": "bearer",
+                "auth_mode": False,
+                "message": "Authentication is disabled. Using guest access.",
+            }
+
+        return {
+            "auth_configured": True,
+            "auth_mode": True,
+        }
+
+    @app.post("/login")
+    async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+        if not auth_handler.accounts:
+            guest_token = auth_handler.create_access_token(
+                user_name="guest", role="guest", metadata={"auth_mode": False}
+            )
+
+            return {
+                "auth_configured": False,
+                "access_token": guest_token,
+                "token_type": "bearer",
+                "auth_mode": False,
+                "message": "Authentication is disabled. Using guest access.",
+            }
+
+        user_name = form_data.username
+
+        if not auth_handler.verify_password(user_name, form_data.password):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect credentials"
+            )
+
+        user_token = auth_handler.create_access_token(
+            user_name=user_name, role="user", metadata={"auth_mode": True}
+        )
+
+        return {
+            "access_token": user_token,
+            "token_type": "bearer",
+            "auth_mode": True,
+        }
 
     return app
 

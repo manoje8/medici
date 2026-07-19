@@ -60,25 +60,29 @@ class GoogleDocAI(Parser):
         lang: str | None = None,
         **kwargs,
     ):
-        doc_path = Path(file_path)
+        try:
+            doc_path = Path(file_path)
 
-        if not doc_path.exists():
-            raise FileNotFoundError(f"Office document doesn't exist: {doc_path}")
+            if not doc_path.exists():
+                raise FileNotFoundError(f"Office document doesn't exist: {doc_path}")
 
-        if doc_path.suffix.lower() not in OFFICE_FORMATS:
-            raise ValueError(f"Unsupported Office format: {doc_path.suffix}")
+            if doc_path.suffix.lower() not in OFFICE_FORMATS:
+                raise ValueError(f"Unsupported Office format: {doc_path.suffix}")
 
-        name_without_suff = doc_path.stem
+            name_without_suff = doc_path.stem
 
-        logfire.info(f"Parsing {name_without_suff} document")
+            logfire.info(f"Parsing {name_without_suff} document")
 
-        ext = doc_path.suffix
+            ext = doc_path.suffix
 
-        with open(doc_path, "rb") as f:
-            content = f.read()
+            with open(doc_path, "rb") as f:
+                content = f.read()
 
-        content = self._process_with_doc_ai(content, ext)
-        return content
+            content = self._process_with_doc_ai(content, ext, name_without_suff)
+            return content
+        except Exception as e:
+            logfire.error(f"Error in parsing Document: {str(e)}")
+            raise
 
     def parse_html(
         self,
@@ -128,7 +132,7 @@ class GoogleDocAI(Parser):
         if total_pages <= max_page:
             with open(file_path, "rb") as f:
                 file_bytes = f.read()
-            text = self._process_with_doc_ai(file_bytes, ext)
+            text = self._process_with_doc_ai(file_bytes, ext, name_without_suffix)
         else:
             logfire.info(f"PDF exceeds {max_page} pages and splitting into chunks...")
 
@@ -145,13 +149,15 @@ class GoogleDocAI(Parser):
                     file_bytes = bs.getvalue()
 
                 with logfire.span(f"Processing pages {i + 1} to {split_end}"):
-                    split_text = self._process_with_doc_ai(file_bytes, ext)
+                    split_text = self._process_with_doc_ai(file_bytes, ext, name_without_suffix)
 
                     text += split_text + "\n"
 
         return text
 
-    def _process_with_doc_ai(self, content: bytes, ext: str) -> str:
+    def _process_with_doc_ai(
+        self, content: bytes, ext: str, display_name: str | None = None
+    ) -> str:
         try:
             ext_key = ext.lower().lstrip(".")
             mime_type = GOOGLE_MIME_TYPES.get(ext_key)
@@ -165,10 +171,14 @@ class GoogleDocAI(Parser):
                 config.GCP_DOC_AI_PROCESSOR_ID,
             )
 
-            raw_doc = documentai.RawDocument(content=content, mime_type=mime_type)
+            raw_doc = documentai.RawDocument(
+                content=content, mime_type=mime_type, display_name=display_name
+            )
             request = documentai.ProcessRequest(name=processor_name, raw_document=raw_doc)
 
-            result = self.client.process_document(request=request)
+            result = self.client.process_document(
+                request=request,
+            )
 
             document = result.document
 
