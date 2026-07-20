@@ -27,7 +27,7 @@ class TestSeparateContent:
             {"type": "text", "text": "Hello"},
             {"type": "text", "text": "World"},
         ]
-        text, multimodal = separate_content(content)
+        text, multimodal, _tb = separate_content(content)
         assert "Hello" in text
         assert "World" in text
         assert multimodal == []
@@ -37,7 +37,7 @@ class TestSeparateContent:
             {"type": "image", "data": "base64..."},
             {"type": "table", "rows": []},
         ]
-        text, multimodal = separate_content(content)
+        text, multimodal, _tb = separate_content(content)
         assert text.strip() == ""
         assert len(multimodal) == 2
 
@@ -47,14 +47,14 @@ class TestSeparateContent:
             {"type": "image", "data": "img_data"},
             {"type": "text", "text": "Conclusion"},
         ]
-        text, multimodal = separate_content(content)
+        text, multimodal, _tb = separate_content(content)
         assert "Intro" in text
         assert "Conclusion" in text
         assert len(multimodal) == 1
         assert multimodal[0]["type"] == "image"
 
     def test_empty_list_returns_empty_results(self):
-        text, multimodal = separate_content([])
+        text, multimodal, _tb = separate_content([])
         assert text == ""
         assert multimodal == []
 
@@ -64,7 +64,7 @@ class TestSeparateContent:
             {"type": "text", "text": "   "},
             {"type": "text", "text": "Real content"},
         ]
-        text, multimodal = separate_content(content)
+        text, multimodal, _tb = separate_content(content)
         assert "Real content" in text
         # Empty strings should not appear as double newlines etc
         assert text.strip() == "Real content"
@@ -74,14 +74,14 @@ class TestSeparateContent:
             {"type": "text", "text": "first"},
             {"type": "image", "data": "abc"},
         ]
-        _, multimodal = separate_content(content)
+        _, multimodal, _tb = separate_content(content)
         assert "_content_list_index" in multimodal[0]
         assert multimodal[0]["_content_list_index"] == 1  # index in original list
 
     def test_default_type_is_text(self):
         """Items without 'type' key should be treated as text."""
         content = [{"text": "no type key"}]
-        text, multimodal = separate_content(content)
+        text, multimodal, _tb = separate_content(content)
         assert "no type key" in text
         assert multimodal == []
 
@@ -90,7 +90,7 @@ class TestSeparateContent:
             {"type": "text", "text": "Part 1"},
             {"type": "text", "text": "Part 2"},
         ]
-        text, _ = separate_content(content)
+        text, _, _tb = separate_content(content)
         assert "\n\n" in text
 
 

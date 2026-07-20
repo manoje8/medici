@@ -14,6 +14,9 @@ class GraphPipeline:
         self._llm_clients: list = llm_clients or []
 
     async def chat(self, user_message: str, session_id: str, user_id: str) -> dict:
+
+        result = {}
+
         if not session_id:
             logfire.info("Creating new session...")
             session_id = f"{user_id}_{uuid.uuid4()}"
@@ -76,7 +79,10 @@ class GraphPipeline:
             "episodic_context": "",
         }
 
-        result = await self.graph.ainvoke(initial_state, config=graph_config)
+        try:
+            result = await self.graph.ainvoke(initial_state, config=graph_config)
+        except Exception:
+            logfire.warning("Graph invocation Error")
 
         token_usage = {}
         total_calls = 0

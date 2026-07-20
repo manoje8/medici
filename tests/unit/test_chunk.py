@@ -111,6 +111,8 @@ class TestChunkDataclass:
             "section_title",
             "page_numbers",
             "token_count",
+            "parent_text",
+            "parent_token_count",
             "metadata",
         }
         assert set(payload.keys()) == expected_keys

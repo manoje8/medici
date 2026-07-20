@@ -20,7 +20,7 @@ server-run:
 	python src/api/main.py
 
 ui-run:
-	streamlit run main.py
+	streamlit run web_ui/main.py
 
 test:
 	pytest tests/ -v --tb=short

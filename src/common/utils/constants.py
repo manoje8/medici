@@ -20,7 +20,6 @@ SKIP_TAGS = {
     "script",
     "style",
     "noscript",
-    "head",
     "meta",
     "link",
     "nav",

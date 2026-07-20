@@ -32,6 +32,8 @@ class Chunk:
             "section_title": self.section_title,
             "page_numbers": self.page_numbers,
             "token_count": self.token_count,
+            "parent_text": self.parent_text,
+            "parent_token_count": self.parent_token_count,
             "metadata": self.metadata,
         }
 

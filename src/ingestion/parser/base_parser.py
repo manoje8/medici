@@ -90,45 +90,6 @@ class Parser:
     def check_installation(self) -> bool:
         raise NotImplementedError("check_installation must be implemented by subclasses")
 
-    def _get_clean_text(self, tag) -> str:
-        return " ".join(tag.get_text(separator=" ").split())
-
-    def _table_to_text(self, table_tag) -> str:
-        """Convert HTML table to a row-per-line natural language format."""
-        rows = []
-        headers = [th.get_text(strip=True) for th in table_tag.find_all("th")]
-
-        for row in table_tag.find_all("tr"):
-            cells = [td.get_text(strip=True) for td in row.find_all("td")]
-
-            if not cells:
-                continue
-
-            if headers:
-                rows.append(" | ".join(f"{h}: {c}") for h, c in zip(headers, cells, strict=False))
-            else:
-                rows.append(" | ".join(cells))
-
-        return "\n".join(rows)
-
-    def _node_to_string(self, nodes: list[dict]) -> str:
-        parts = []
-
-        for node in nodes:
-            if node["type"] == "heading":
-                parts.append(f"{'#' * node['level']} {node['text']}")
-            elif node["type"] == "block":
-                prefix = f"[{node['breadcrumb']}]\n" if node["breadcrumb"] else ""
-                parts.append(f"{prefix}{node['text']}")
-            elif node["type"] == "table":
-                prefix = f"[{node['breadcrumb']}]\n" if node["breadcrumb"] else ""
-                parts.append(f"{prefix}<table>\n{node['text']}\n</table>")
-            else:
-                prefix = f"[{node['breadcrumb']}]\n" if node.get("breadcrumb") else ""
-                parts.append(f"{prefix}{node['text']}")
-
-        return "\n\n".join(parts)
-
     def _parse_structure(self, html: str) -> str:
         """Returns a list of nodes: {type, level, text, path}"""
 
@@ -183,3 +144,72 @@ class Parser:
                 )
 
         return self._node_to_string(nodes)
+
+    def _get_clean_text(self, tag) -> str:
+        return " ".join(tag.get_text(separator=" ").split())
+
+    def _table_to_text(self, table_tag) -> str:
+        rows_tags = table_tag.find_all(["tr", "row"])
+
+        def is_header_cell(cell) -> bool:
+            return cell.name == "th" or cell.get("role") == "head"
+
+        headers = []
+        if rows_tags:
+            first_cells = rows_tags[0].find_all(["td", "th", "cell"])
+            if any(is_header_cell(c) for c in first_cells):
+                headers = [c.get_text(strip=True) for c in first_cells]
+
+        out = []
+        for row in rows_tags:
+            cells = row.find_all(["td", "th", "cell"])
+            values = [c.get_text(strip=True) for c in cells]
+            if not values:
+                continue
+            if (
+                headers
+                and values
+                == [
+                    c.get_text(strip=True)
+                    for c in row.find_all(["td", "th", "cell"])
+                    if is_header_cell(c) or True
+                ]
+                and row is rows_tags[0]
+                and any(is_header_cell(c) for c in cells)
+            ):
+                continue
+            if headers and len(headers) == len(values):
+                out.append(" | ".join(f"{h}: {v}" for h, v in zip(headers, values, strict=False)))
+            else:
+                out.append(" | ".join(values))
+
+        return "\n".join(out)
+
+    def _node_to_string(self, nodes: list[dict]) -> str:
+        parts = []
+
+        for node in nodes:
+            text = node.get("text", "")
+            if not text.strip():
+                continue
+
+            node_type = node["type"]
+
+            if node_type == "heading":
+                level = max(1, min(6, node.get("level", 1)))
+                parts.append(f"{'#' * level} {text}")
+
+            elif node_type == "block":
+                breadcrumb = node.get("breadcrumb")
+                prefix = f"[{breadcrumb}]\n" if breadcrumb else ""
+                parts.append(f"{prefix}{text}")
+
+            elif node_type == "table":
+                breadcrumb = node.get("breadcrumb")
+                prefix = f"[{breadcrumb}]\n" if breadcrumb else ""
+                parts.append(f"{prefix}<table>\n{text}\n</table>")
+
+            else:
+                raise ValueError(f"Unhandled node type in _node_to_string: {node_type!r}")
+
+        return "\n\n".join(parts)

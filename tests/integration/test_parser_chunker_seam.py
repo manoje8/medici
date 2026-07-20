@@ -31,11 +31,11 @@ class TestSeparateContentOutputShape:
 
     def test_returns_two_element_tuple(self, docling_content_list):
         result = separate_content(docling_content_list)
-        assert isinstance(result, tuple) and len(result) == 2
+        assert isinstance(result, tuple) and len(result) == 3
 
     def test_first_element_is_string(self, docling_content_list):
         """chunker.chunk() expects str — not list[dict]."""
-        text_content, _ = separate_content(docling_content_list)
+        text_content, _, _tb = separate_content(docling_content_list)
         assert isinstance(text_content, str), (
             f"Expected str, got {type(text_content).__name__}. "
             "RecursiveCharacterChunker.chunk() will fail with list input."
@@ -43,41 +43,41 @@ class TestSeparateContentOutputShape:
 
     def test_second_element_is_list_of_dicts(self, docling_content_list):
         """chunk_multimodal_items() expects list[dict]."""
-        _, multimodal = separate_content(docling_content_list)
+        _, multimodal, _tb = separate_content(docling_content_list)
         assert isinstance(multimodal, list)
         assert all(isinstance(item, dict) for item in multimodal)
 
     def test_text_content_contains_all_text_blocks(self, docling_content_list):
-        text_content, _ = separate_content(docling_content_list)
+        text_content, _, _tb = separate_content(docling_content_list)
         assert "Introduction to RAG systems." in text_content
         assert "RAG stands for Retrieval-Augmented Generation." in text_content
         assert "It combines dense retrieval with language model generation." in text_content
 
     def test_multimodal_items_retain_type_key(self, docling_content_list):
-        _, multimodal = separate_content(docling_content_list)
+        _, multimodal, _tb = separate_content(docling_content_list)
         for item in multimodal:
             assert "type" in item, f"Item missing 'type' key: {item}"
 
     def test_multimodal_items_exclude_text_type(self, docling_content_list):
-        _, multimodal = separate_content(docling_content_list)
+        _, multimodal, _tb = separate_content(docling_content_list)
         types = {item["type"] for item in multimodal}
         assert "text" not in types
 
     def test_multimodal_items_include_table_image_equation(self, docling_content_list):
-        _, multimodal = separate_content(docling_content_list)
+        _, multimodal, _tb = separate_content(docling_content_list)
         types = {item["type"] for item in multimodal}
         assert {"table", "image", "equation"}.issubset(types)
 
     def test_empty_input_returns_empty_string_and_empty_list(self):
-        text, multimodal = separate_content([])
-        assert text == "" and multimodal == []
+        text, multimodal, text_blocks = separate_content([])
+        assert text == "" and multimodal == [] and text_blocks == []
 
     def test_all_text_returns_empty_multimodal(self):
         content = [
             {"type": "text", "text": "First."},
             {"type": "text", "text": "Second."},
         ]
-        _, multimodal = separate_content(content)
+        _, multimodal, _tb = separate_content(content)
         assert multimodal == []
 
     def test_blank_text_items_are_excluded(self):
@@ -87,7 +87,7 @@ class TestSeparateContentOutputShape:
             {"type": "text", "text": "   "},  # blank — should be skipped
             {"type": "text", "text": "More content."},
         ]
-        text, _ = separate_content(content)
+        text, _, _tb = separate_content(content)
         # Should not introduce triple newlines from blank entries
         assert "\n\n\n" not in text
 
@@ -101,20 +101,20 @@ class TestChunkerAcceptsParserOutput:
 
     def test_chunk_accepts_string_output_of_separate_content(self, chunker, docling_content_list):
         """chunker.chunk() must not crash or AttributeError on a real str input."""
-        text_content, _ = separate_content(docling_content_list)
+        text_content, _, _tb = separate_content(docling_content_list)
         result = chunker.chunk(text_content, doc_id="doc-001", source_file="test.pdf")
         assert isinstance(result, list)
         assert all(isinstance(c, Chunk) for c in result)
 
     def test_chunk_produces_non_empty_text_in_every_chunk(self, chunker, docling_content_list):
-        text_content, _ = separate_content(docling_content_list)
+        text_content, _, _tb = separate_content(docling_content_list)
         result = chunker.chunk(text_content, doc_id="doc-001", source_file="test.pdf")
         assert len(result) > 0
         assert all(c.text.strip() for c in result)
 
     def test_chunk_multimodal_accepts_separate_content_output(self, chunker, docling_content_list):
         """chunk_multimodal_items() must accept list[dict] from separate_content()."""
-        _, multimodal = separate_content(docling_content_list)
+        _, multimodal, _tb = separate_content(docling_content_list)
         result = chunker.chunk_multimodal_items(
             multimodal, doc_id="doc-001", source_file="test.pdf", start_index=10
         )
@@ -122,7 +122,7 @@ class TestChunkerAcceptsParserOutput:
         assert all(isinstance(c, Chunk) for c in result)
 
     def test_multimodal_chunks_have_populated_text(self, chunker, docling_content_list):
-        _, multimodal = separate_content(docling_content_list)
+        _, multimodal, _tb = separate_content(docling_content_list)
         result = chunker.chunk_multimodal_items(
             multimodal, doc_id="doc-001", source_file="test.pdf"
         )
@@ -131,7 +131,7 @@ class TestChunkerAcceptsParserOutput:
 
     def test_chunk_indices_are_sequential_from_start_index(self, chunker, docling_content_list):
         """Multimodal chunk indices must start from the given start_index."""
-        _, multimodal = separate_content(docling_content_list)
+        _, multimodal, _tb = separate_content(docling_content_list)
         start = 42
         result = chunker.chunk_multimodal_items(
             multimodal, doc_id="doc-001", source_file="test.pdf", start_index=start
@@ -149,7 +149,7 @@ class TestFullParserToChunkPipeline:
     """
 
     def test_full_pipeline_produces_chunk_list(self, chunker, docling_content_list):
-        text, multimodal = separate_content(docling_content_list)
+        text, multimodal, _tb = separate_content(docling_content_list)
 
         text_chunks = chunker.chunk(text, doc_id="doc-pipeline", source_file="test.pdf")
         multimodal_chunks = chunker.chunk_multimodal_items(
@@ -165,7 +165,7 @@ class TestFullParserToChunkPipeline:
 
     def test_pipeline_chunk_indices_are_unique(self, chunker, docling_content_list):
         """No two chunks in the combined output should share the same index."""
-        text, multimodal = separate_content(docling_content_list)
+        text, multimodal, _tb = separate_content(docling_content_list)
 
         text_chunks = chunker.chunk(text, doc_id="doc-pipeline", source_file="test.pdf")
         multimodal_chunks = chunker.chunk_multimodal_items(

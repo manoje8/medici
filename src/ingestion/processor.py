@@ -22,7 +22,7 @@ from src.common.utils.constants import (
 )
 from src.common.utils.helper import separate_content, supported_extensions_list
 from src.common.utils.tokenizer import TikTokenTokenizer, Tokenizer
-from src.ingestion.chunking.chunk import BatchProcess, build_parent_child_chunk
+from src.ingestion.chunking.chunk import BatchProcess, Chunk, build_parent_child_chunk
 from src.ingestion.chunking.chunker_factory import create_chunker
 from src.ingestion.chunking.chunking_config import ChunkingConfig
 from src.ingestion.embedding import EmbeddingService
@@ -164,6 +164,69 @@ class Processor:
 
         return hasher.hexdigest()[:24]
 
+    def _interleave_chunks(
+        self,
+        text_chunks: list[Chunk],
+        multimodal_chunks: list[Chunk],
+        text_blocks: list[tuple[str, int]],
+    ) -> list[Chunk]:
+        """
+        Merge text_chunks and multimodal_chunks in true source-document order
+        so that ``build_parent_child_chunk`` windows across both types correctly.
+
+        Document-order positions
+        ------------------------
+        * Multimodal chunks carry ``metadata["_content_list_index"]`` — the item's
+          exact index in the original parsed content list.
+        * Text chunks are derived from the joined text string; we recover their
+          approximate document positions from *text_blocks*, a list of
+          ``(text, original_index)`` pairs returned by ``separate_content``.  Each
+          Chunk produced by the text splitter is attributed to the text block whose
+          cumulative character boundary it falls within.
+
+        After sorting the merged list, ``chunk_index`` is reassigned 0…N so that
+        downstream code that relies on a contiguous integer index stays correct.
+        """
+
+        # Assign a doc-order key to every text chunk
+        if text_blocks and text_chunks:
+            cumulative: list[tuple[int, int]] = []  # (end_char_offset, original_index)
+            offset = 0
+            sep = "\n\n"
+            for i, (block_text, original_idx) in enumerate(text_blocks):
+                offset += len(block_text)
+                cumulative.append((offset, original_idx))
+                if i < len(text_blocks) - 1:
+                    offset += len(sep)
+
+            cursor = 0
+            for chunk in text_chunks:
+                chunk_len = len(chunk.text)
+                while cursor < len(cumulative) - 1 and cumulative[cursor][0] < chunk_len:
+                    cursor += 1
+                chunk.metadata["_doc_order"] = cumulative[cursor][1]
+        else:
+            # No text blocks or no text chunks — assign sequential fallback keys
+            for i, chunk in enumerate(text_chunks):
+                chunk.metadata["_doc_order"] = i
+
+        # Assign doc-order key to multimodal chunks
+        for chunk in multimodal_chunks:
+            chunk.metadata.setdefault(
+                "_doc_order",
+                chunk.metadata.get("_content_list_index", float("inf")),
+            )
+
+        # merge, sort, re-index
+        merged = sorted(
+            text_chunks + multimodal_chunks,
+            key=lambda c: (c.metadata.get("_doc_order", float("inf")), c.chunk_index),
+        )
+        for new_idx, chunk in enumerate(merged):
+            chunk.chunk_index = new_idx
+
+        return merged
+
     async def _chunk_doc_content(
         self,
         file_path: Path,
@@ -172,6 +235,7 @@ class Processor:
         doc_id: str,
         parse_method: ParseMethod,
         split_by_character: str | None = None,
+        text_blocks: list[tuple[str, int]] | None = None,
     ):
         chunking_strategy = self._select_chunking_strategy(file_path)
         logfire.info(f"Starting chunking with strategy: {chunking_strategy} - {parse_method}")
@@ -188,9 +252,9 @@ class Processor:
                 multimodal_items,
                 doc_id=doc_id,
                 source_file=str(file_path),
-                start_index=len(text_chunks),
+                start_index=0,
             )
-            chunks = text_chunks + multimodal_chunks
+            chunks = self._interleave_chunks(text_chunks, multimodal_chunks, text_blocks or [])
         else:
             chunks = text_chunks
 
@@ -424,11 +488,17 @@ class Processor:
         )
         logfire.info(f"Stage 1 complete: {len(content_list)} content list")
 
+        text_blocks: list[tuple[str, int]] = []
         if parse_method == ParseMethod.DOCLING:
-            content_list, multimodal_items = separate_content(content_list)
+            content_list, multimodal_items, text_blocks = separate_content(content_list)
 
         return await self._chunk_embed_store(
-            file_path, content_list, multimodal_items, doc_id, parse_method
+            file_path,
+            content_list,
+            multimodal_items,
+            doc_id,
+            parse_method,
+            text_blocks=text_blocks,
         )
 
     async def ingest_documents(
@@ -451,11 +521,17 @@ class Processor:
         results = {}
         for file_path, (content_list, doc_id) in parsed.items():
             path = Path(file_path)
+            text_blocks: list[tuple[str, int]] = []
             if parse_method == ParseMethod.DOCLING:
-                content_list, multimodal_items = separate_content(content_list)
+                content_list, multimodal_items, text_blocks = separate_content(content_list)
             try:
                 results[file_path] = await self._chunk_embed_store(
-                    path, content_list, multimodal_items, doc_id, parse_method
+                    path,
+                    content_list,
+                    multimodal_items,
+                    doc_id,
+                    parse_method,
+                    text_blocks=text_blocks,
                 )
             except Exception as e:
                 logfire.error(f"Failed to chunk/embed/store {file_path}: {str(e)}")
@@ -471,6 +547,7 @@ class Processor:
         multimodal_items: list[dict[str, Any]],
         doc_id: str,
         parse_method: ParseMethod,
+        text_blocks: list[tuple[str, int]] | None = None,
     ) -> dict:
         chunks = await self._chunk_doc_content(
             file_path=file_path,
@@ -478,6 +555,7 @@ class Processor:
             multimodal_items=multimodal_items,
             doc_id=doc_id,
             parse_method=parse_method,
+            text_blocks=text_blocks,
         )
         self.in_storage.upload(key="chunks", data=chunks)
         logfire.info(f"Document chunking completed: {len(chunks)}")
