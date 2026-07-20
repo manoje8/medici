@@ -1,4 +1,4 @@
-.PHONY: help lint format isort server-run ui-run test clean \
+.PHONY: help lint format isort server-run ui-run test eval clean \
         docker-build docker-up docker-down docker-logs docker-restart docker-clean
 
 
@@ -24,6 +24,9 @@ ui-run:
 
 test:
 	pytest tests/ -v --tb=short
+
+eval:
+	python tests/eval/eval_runner.py --exit-code
 
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +

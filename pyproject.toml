@@ -49,6 +49,7 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 markers = [
     "integration: marks tests as integration tests (may require external services)",
+    "eval: marks tests as evaluation tests (requires live LLM and Qdrant)",
 ]
 addopts = "-v --tb=short --strict-markers"
 asyncio_mode = "auto"

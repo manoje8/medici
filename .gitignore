@@ -63,3 +63,4 @@ analysis_results.md
 data
 .cache
 .benchmarks
+tests/eval/eval_results.json
