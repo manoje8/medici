@@ -33,6 +33,10 @@ _FIREWALL_PREAMBLE = (
     "---\n"
 )
 
+_CITATION_RE = re.compile(
+    r"\[Source:\s*(?P<source>[^|\]]+?)\s*\|\s*Section:\s*(?P<section>[^\]]+?)\]"
+)
+
 
 def _get(state: AgentState | dict, key: str, attr: str | None = None):
     """Unified accessor for both AgentState dataclass and LangGraph State dict."""
@@ -528,18 +532,24 @@ Provide:
         return None
 
     def _ensure_citations(self, response_text: str, state: State | dict) -> str:
-        if re.search(r"\[.+?\]", response_text):
-            return response_text
-
         chunks = _get(state, "accepted_chunks") or []
         if not chunks:
             return response_text
 
-        sections = list(
-            dict.fromkeys(
-                f"{c.get('source', 'unknown')} — {c.get('section', 'unknown')}" for c in chunks
-            )
+        known = {
+            (str(c.get("source", "unknown")).strip(), str(c.get("section", "unknown")).strip())
+            for c in chunks
+        }
+
+        has_valid_citation = any(
+            (m.group("source").strip(), m.group("section").strip()) in known
+            for m in _CITATION_RE.finditer(response_text)
         )
+
+        if has_valid_citation:
+            return response_text
+
+        sections = list(dict.fromkeys(f"{s} — {sec}" for s, sec in known))
         footer = "\n\n---\n**Sources Used:**\n" + "\n".join(f"- {s}" for s in sections)
         return response_text + footer
 
