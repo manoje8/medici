@@ -1,33 +1,51 @@
+import os
+
 import logfire
 from flashrank import Ranker, RerankRequest
 
+from src.common.utils.config import config
+
 
 class Reranker:
-    def __init__(self, top_k: int = 5):
+    def __init__(self, top_k: int = 5, cache_dir: str = config.FLASHRANK_CACHE_DIR):
         self.top_k = top_k
+        self.cache_dir = cache_dir
         self._ranker = None
+        self._check_cache_path()
+
+    def _check_cache_path(self):
+        try:
+            os.makedirs(self.cache_dir, exist_ok=True)
+            self.cache_dir = self.cache_dir
+        except PermissionError:
+            fallback_dir = os.path.expanduser("~/.flashrank_cache")
+            os.makedirs(fallback_dir, exist_ok=True)
+            self.cache_dir = fallback_dir
+            logfire.warning(
+                "using_fallback_cache_directory", original=self.cache_dir, fallback=fallback_dir
+            )
 
     def _get_ranker(self) -> Ranker:
         if self._ranker is None:
             logfire.info(
                 "initializing_reranker_model",
-                cache_dir="/flashrank",
+                cache_dir=self.cache_dir,
                 top_k=self.top_k,
             )
             try:
                 with logfire.span("ranker_model_loading"):
-                    self._ranker = Ranker(cache_dir="/flashrank")
+                    self._ranker = Ranker(cache_dir=self.cache_dir)
                     logfire.info(
                         "reranker_model_loaded_successfully",
                         model_type=type(self._ranker).__name__,
-                        cache_dir="/flashrank",
+                        cache_dir=self.cache_dir,
                     )
             except Exception as e:
                 logfire.warning(
                     "reranker_model_loading_fallback",
                     error=str(e),
                     error_type=type(e).__name__,
-                    cache_dir="/flashrank",
+                    cache_dir=self.cache_dir,
                     using_fallback=True,
                 )
                 self._ranker = Ranker()

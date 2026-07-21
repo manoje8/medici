@@ -24,10 +24,6 @@ import pytest
 from src.agents.graph.runner import GraphPipeline
 from src.agents.memory.conversation_model import ConversationSession
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_session(session_id: str = "sess-1", user_id: str = "user-1") -> ConversationSession:
     return ConversationSession(session_id=session_id, user_id=user_id)
@@ -38,7 +34,7 @@ def _make_graph_result(answer: str = "Test answer") -> dict:
         "final_answer": answer,
         "sources": ["doc1"],
         "was_rewritten": False,
-        "retrieval_round": 1,
+        "current_hop": 0,
     }
 
 
@@ -49,11 +45,6 @@ def _make_llm_client(model: str = "gemini", calls: int = 2, total_tokens: int = 
         return_value={"model": model, "calls": calls, "total_tokens": total_tokens}
     )
     return client
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -80,11 +71,6 @@ def pipeline(mock_graph, mock_short_term):
         semantic_cache=None,
         llm_clients=[],
     )
-
-
-# ---------------------------------------------------------------------------
-# Session handling
-# ---------------------------------------------------------------------------
 
 
 class TestSessionHandling:
@@ -115,16 +101,11 @@ class TestSessionHandling:
         mock_short_term.append_turn.assert_called_once()
 
 
-# ---------------------------------------------------------------------------
-# Response structure
-# ---------------------------------------------------------------------------
-
-
 class TestResponseStructure:
     async def test_response_has_required_keys(self, pipeline, mock_short_term):
         mock_short_term.get_session.return_value = _make_session()
         result = await pipeline.chat("What is AI?", session_id="s1", user_id="u1")
-        for key in ("answer", "session_id", "sources", "query_was_rewritten", "retrieval_rounds"):
+        for key in ("answer", "session_id", "sources", "query_was_rewritten", "retrieval_hops"):
             assert key in result, f"Missing key: {key}"
 
     async def test_cache_hit_is_false_when_no_cache(self, pipeline, mock_short_term):
@@ -138,11 +119,6 @@ class TestResponseStructure:
         p = GraphPipeline(mock_graph, mock_short_term)
         result = await p.chat("Q", session_id="s1", user_id="u1")
         assert result["answer"] == "Specific answer"
-
-
-# ---------------------------------------------------------------------------
-# Semantic cache — hit path
-# ---------------------------------------------------------------------------
 
 
 class TestSemanticCacheHit:
@@ -211,11 +187,6 @@ class TestSemanticCacheHit:
         p = GraphPipeline(mock_graph, mock_short_term, semantic_cache=cache)
         result = await p.chat("Q", session_id="s1", user_id="u1")
         assert "answer" in result
-
-
-# ---------------------------------------------------------------------------
-# Token usage aggregation
-# ---------------------------------------------------------------------------
 
 
 class TestTokenUsageAggregation:

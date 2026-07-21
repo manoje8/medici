@@ -17,7 +17,7 @@ class GraderAgent:
         """Grades retrieval quality and returns a score for routing decisions."""
 
         query = state.get("effective_query") or state.get("original_message", "")
-        sub_questions = state.get("sub_questions", [])
+        sub_questions = state.get("hop_questions", [])
         accepted_chunks = state.get("accepted_chunks", [])
         # retrieval_history = state.get("retrieval_history", [])
         question_category = state.get("question_category", "factual")

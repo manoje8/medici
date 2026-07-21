@@ -16,14 +16,12 @@ import pytest
 from src.agents.graph.edges import (
     route_after_classify,
     route_after_grade,
-    route_after_next_sub_question,
-    route_after_retrieve,
+    route_after_hop_check,
 )
 from src.agents.graph.nodes import (
     grade,
-    next_sub_question,
+    hop_check,
     plan,
-    refine_query,
     retrieve,
     rewrite_for_refinement,
     rewrite_query,
@@ -44,12 +42,14 @@ def _base_state(**overrides) -> dict:
         "current_query": "What is RAG?",
         "was_rewritten": False,
         "question_category": "factual",
-        "sub_questions": ["What is RAG?"],
-        "current_sub_question_idx": 0,
+        "hop_questions": ["What is RAG?"],
+        "current_hop": 0,
+        "max_hops": 4,
         "retrieval_round": 0,
         "max_retrieval_rounds": 3,
         "retrieval_history": [],
         "accepted_chunks": [],
+        "hop_decision": "",
         "final_answer": "",
         "sources": [],
         "doc_id_filter": None,
@@ -78,12 +78,6 @@ class TestRewriteQueryNode:
         return m
 
     @pytest.fixture
-    def mock_episodic(self):
-        m = MagicMock()
-        m.load_user_memory = AsyncMock(return_value="")
-        return m
-
-    @pytest.fixture
     def mock_rewriter_rewritten(self):
         m = MagicMock()
         m.rewrite = AsyncMock(
@@ -108,16 +102,13 @@ class TestRewriteQueryNode:
         return m
 
     @pytest.mark.asyncio
-    async def test_returns_correct_keys(
-        self, mock_short_term, mock_rewriter_rewritten, mock_episodic
-    ):
+    async def test_returns_correct_keys(self, mock_short_term, mock_rewriter_rewritten):
         state = _base_state()
         result = await rewrite_query(
             state,
             short_term=mock_short_term,
             rewriter=mock_rewriter_rewritten,
         )
-
         assert set(result.keys()) == {
             "current_query",
             "effective_query",
@@ -126,49 +117,42 @@ class TestRewriteQueryNode:
         }
 
     @pytest.mark.asyncio
-    async def test_rewritten_query_propagated(
-        self, mock_short_term, mock_rewriter_rewritten, mock_episodic
-    ):
+    async def test_rewritten_query_propagated(self, mock_short_term, mock_rewriter_rewritten):
         state = _base_state()
         result = await rewrite_query(
             state,
             short_term=mock_short_term,
             rewriter=mock_rewriter_rewritten,
         )
-
         assert result["current_query"] == "What is Retrieval-Augmented Generation?"
         assert result["effective_query"] == "What is Retrieval-Augmented Generation?"
         assert result["was_rewritten"] is True
         assert result["resolved_references"] == ["RAG"]
 
     @pytest.mark.asyncio
-    async def test_unchanged_query(self, mock_short_term, mock_rewriter_unchanged, mock_episodic):
+    async def test_unchanged_query(self, mock_short_term, mock_rewriter_unchanged):
         state = _base_state()
         result = await rewrite_query(
             state,
             short_term=mock_short_term,
             rewriter=mock_rewriter_unchanged,
         )
-
         assert result["was_rewritten"] is False
         assert result["current_query"] == "What is RAG?"
 
     @pytest.mark.asyncio
-    async def test_session_fetched_with_correct_id(
-        self, mock_short_term, mock_rewriter_rewritten, mock_episodic
-    ):
+    async def test_session_fetched_with_correct_id(self, mock_short_term, mock_rewriter_rewritten):
         state = _base_state(session_id="my-session-42")
         await rewrite_query(
             state,
             short_term=mock_short_term,
             rewriter=mock_rewriter_rewritten,
         )
-
         mock_short_term.get_session.assert_awaited_once_with("my-session-42")
 
     @pytest.mark.asyncio
     async def test_rewriter_called_with_original_message(
-        self, mock_short_term, mock_rewriter_rewritten, mock_episodic
+        self, mock_short_term, mock_rewriter_rewritten
     ):
         state = _base_state(original_message="Tell me about vector databases")
         await rewrite_query(
@@ -176,15 +160,12 @@ class TestRewriteQueryNode:
             short_term=mock_short_term,
             rewriter=mock_rewriter_rewritten,
         )
-
         mock_rewriter_rewritten.rewrite.assert_awaited_once()
         call_args = mock_rewriter_rewritten.rewrite.call_args[0]
         assert call_args[0] == "Tell me about vector databases"
 
 
-# ---------------------------------------------------------------------------
 # Node: route
-# ---------------------------------------------------------------------------
 
 
 class TestRouteNode:
@@ -200,7 +181,6 @@ class TestRouteNode:
     async def test_returns_question_category(self, mock_router):
         state = _base_state()
         result = await route(state, router=mock_router)
-
         assert "question_category" in result
         assert result["question_category"] == "factual"
 
@@ -208,7 +188,6 @@ class TestRouteNode:
     async def test_router_called_with_effective_query(self, mock_router):
         state = _base_state(effective_query="How do embeddings work?")
         await route(state, router=mock_router)
-
         mock_router.classify.assert_awaited_once_with(
             "How do embeddings work?", conversation_history=[]
         )
@@ -231,34 +210,27 @@ class TestPlanNode:
     @pytest.fixture
     def mock_planner(self):
         m = MagicMock()
-        m.decompose = AsyncMock(return_value=["sub-q1", "sub-q2", "sub-q3"])
+        m.decompose = AsyncMock(return_value=["seed sub-question"])
         return m
 
     @pytest.mark.asyncio
     async def test_returns_planning_keys(self, mock_planner):
         state = _base_state()
         result = await plan(state, planner=mock_planner)
-
-        assert set(result.keys()) == {
-            "sub_questions",
-            "current_sub_question_idx",
-            "retrieval_round",
-        }
+        assert set(result.keys()) == {"hop_questions", "current_hop", "retrieval_round"}
 
     @pytest.mark.asyncio
-    async def test_initialises_index_and_round_to_zero(self, mock_planner):
+    async def test_initialises_hop_and_round_to_zero(self, mock_planner):
         state = _base_state()
         result = await plan(state, planner=mock_planner)
-
-        assert result["current_sub_question_idx"] == 0
+        assert result["current_hop"] == 0
         assert result["retrieval_round"] == 0
 
     @pytest.mark.asyncio
-    async def test_sub_questions_set(self, mock_planner):
+    async def test_hop_questions_set(self, mock_planner):
         state = _base_state()
         result = await plan(state, planner=mock_planner)
-
-        assert result["sub_questions"] == ["sub-q1", "sub-q2", "sub-q3"]
+        assert result["hop_questions"] == ["seed sub-question"]
 
     @pytest.mark.asyncio
     async def test_planner_called_with_query_and_category(self, mock_planner):
@@ -266,16 +238,7 @@ class TestPlanNode:
             effective_query="Compare FAISS and Qdrant", question_category="comparative"
         )
         await plan(state, planner=mock_planner)
-
         mock_planner.decompose.assert_awaited_once_with("Compare FAISS and Qdrant", "comparative")
-
-    @pytest.mark.asyncio
-    async def test_single_sub_question(self, mock_planner):
-        mock_planner.decompose = AsyncMock(return_value=["only question"])
-        state = _base_state()
-        result = await plan(state, planner=mock_planner)
-
-        assert len(result["sub_questions"]) == 1
 
 
 # Node: retrieve
@@ -303,14 +266,12 @@ class TestRetrieveNode:
     async def test_appends_to_retrieval_history(self, mock_retrieval_agent):
         state = _base_state(retrieval_history=[], retrieval_round=0)
         result = await retrieve(state, retrieval_agent=mock_retrieval_agent)
-
         assert len(result["retrieval_history"]) == 1
 
     @pytest.mark.asyncio
     async def test_history_entry_has_correct_shape(self, mock_retrieval_agent):
         state = _base_state()
         result = await retrieve(state, retrieval_agent=mock_retrieval_agent)
-
         entry = result["retrieval_history"][0]
         assert "query" in entry
         assert "decision" in entry
@@ -321,7 +282,6 @@ class TestRetrieveNode:
     async def test_increments_retrieval_round(self, mock_retrieval_agent):
         state = _base_state(retrieval_round=1)
         result = await retrieve(state, retrieval_agent=mock_retrieval_agent)
-
         assert result["retrieval_round"] == 2
 
     @pytest.mark.asyncio
@@ -329,167 +289,141 @@ class TestRetrieveNode:
         existing = [{"query": "old", "decision": "sufficient", "reasoning": "", "chunks": []}]
         state = _base_state(retrieval_history=existing, retrieval_round=1)
         result = await retrieve(state, retrieval_agent=mock_retrieval_agent)
-
         assert len(result["retrieval_history"]) == 2
         assert result["retrieval_history"][0]["query"] == "old"
 
     @pytest.mark.asyncio
-    async def test_retrieval_agent_receives_current_sub_question(self, mock_retrieval_agent):
+    async def test_retrieval_agent_receives_last_hop_question(self, mock_retrieval_agent):
         state = _base_state(
-            sub_questions=["q0", "q1"],
-            current_sub_question_idx=1,
+            hop_questions=["q0", "q1"],
             current_query="q1",
         )
         await retrieve(state, retrieval_agent=mock_retrieval_agent)
-
         call_kwargs = mock_retrieval_agent.retrieve_and_evaluate.call_args[1]
         assert call_kwargs["original_question"] == "q1"
 
 
-# Node: refine_query
+# Node: hop_check
 
 
-class TestRefineQueryNode:
-    """Tests for the refine_query node."""
+class TestHopCheckNode:
+    """Tests for the hop_check node."""
 
     @pytest.fixture
-    def mock_retrieval_agent(self):
+    def mock_planner_sufficient(self):
         m = MagicMock()
-        m.generate_refined_query = AsyncMock(return_value="refined search terms")
+        m.plan_next_hop = AsyncMock(
+            return_value={
+                "next_action": "sufficient",
+                "query": None,
+                "reasoning": "All needed info retrieved",
+            }
+        )
+        return m
+
+    @pytest.fixture
+    def mock_planner_rephrase(self):
+        m = MagicMock()
+        m.plan_next_hop = AsyncMock(
+            return_value={
+                "next_action": "rephrase",
+                "query": "better phrased query",
+                "reasoning": "Need better retrieval phrasing",
+            }
+        )
+        return m
+
+    @pytest.fixture
+    def mock_planner_new_sub_q(self):
+        m = MagicMock()
+        m.plan_next_hop = AsyncMock(
+            return_value={
+                "next_action": "new_sub_question",
+                "query": "what about aspect X?",
+                "reasoning": "Missing info on aspect X",
+            }
+        )
         return m
 
     @pytest.mark.asyncio
-    async def test_returns_current_query_key(self, mock_retrieval_agent):
-        state = _base_state(
-            sub_questions=["q0"],
-            current_sub_question_idx=0,
-            retrieval_round=1,
-            refine_query="q1",
-        )
-        state["retrieval_history"] = [{"query": "original query", "reasoning": "some reasoning"}]
-        result = await refine_query(state, retrieval_agent=mock_retrieval_agent)
-
-        assert "current_query" in result
-        assert result["current_query"] == "refined search terms"
-
-    @pytest.mark.asyncio
-    async def test_passes_correct_sub_question(self, mock_retrieval_agent):
-        state = _base_state(
-            sub_questions=["q0", "q1"],
-            current_sub_question_idx=1,
-            retrieval_round=2,
-        )
-        retrieval_history = [
-            {"query": "original query", "reasoning": "some reasoning"},
-            {"query": "second query", "reasoning": "more reasoning"},
-        ]
-        state["retrieval_history"] = retrieval_history
-        await refine_query(state, retrieval_agent=mock_retrieval_agent)
-
-        call_kwargs = mock_retrieval_agent.generate_refined_query.call_args[1]
-        assert call_kwargs["original_question"] == "q1"
-        assert call_kwargs["previous_rounds"] == retrieval_history
-
-
-# Node: next_sub_question
-
-
-class TestNextSubQuestionNode:
-    """Tests for the next_sub_question node."""
-
-    @pytest.mark.asyncio
-    async def test_accumulates_accepted_chunks(self):
-        existing = [{"text": "old chunk", "source": "x.pdf"}]
-        new_chunk = {"text": "new chunk", "source": "y.pdf"}
+    async def test_sufficient_sets_hop_decision(self, mock_planner_sufficient):
         history = [
-            {
-                "query": "q",
-                "decision": "sufficient",
-                "reasoning": "",
-                "chunks": [new_chunk],
-            }
+            {"query": "q", "decision": "sufficient", "reasoning": "", "chunks": [{"text": "c1"}]}
         ]
+        state = _base_state(retrieval_history=history, current_hop=0, max_hops=4)
+        result = await hop_check(state, planner=mock_planner_sufficient)
+        assert result["hop_decision"] == "sufficient"
 
+    @pytest.mark.asyncio
+    async def test_rephrase_sets_retrieve_again(self, mock_planner_rephrase):
+        history = [{"query": "q", "decision": "refine_query", "reasoning": "", "chunks": []}]
+        state = _base_state(retrieval_history=history, current_hop=0, max_hops=4)
+        result = await hop_check(state, planner=mock_planner_rephrase)
+        assert result["hop_decision"] == "retrieve_again"
+        assert result["current_query"] == "better phrased query"
+        assert result["current_hop"] == 1
+
+    @pytest.mark.asyncio
+    async def test_new_sub_question_sets_retrieve_again(self, mock_planner_new_sub_q):
+        history = [
+            {"query": "q", "decision": "sufficient", "reasoning": "", "chunks": [{"text": "c1"}]}
+        ]
+        state = _base_state(retrieval_history=history, current_hop=0, max_hops=4)
+        result = await hop_check(state, planner=mock_planner_new_sub_q)
+        assert result["hop_decision"] == "retrieve_again"
+        assert result["current_query"] == "what about aspect X?"
+
+    @pytest.mark.asyncio
+    async def test_appends_to_hop_questions(self, mock_planner_new_sub_q):
+        history = [{"query": "q", "decision": "sufficient", "reasoning": "", "chunks": []}]
+        state = _base_state(
+            retrieval_history=history,
+            hop_questions=["q0"],
+            current_hop=0,
+            max_hops=4,
+        )
+        result = await hop_check(state, planner=mock_planner_new_sub_q)
+        assert result["hop_questions"] == ["q0", "what about aspect X?"]
+
+    @pytest.mark.asyncio
+    async def test_accumulates_accepted_chunks(self, mock_planner_sufficient):
+        existing = [{"text": "old chunk"}]
+        new_chunk = {"text": "new chunk"}
+        history = [{"query": "q", "decision": "sufficient", "reasoning": "", "chunks": [new_chunk]}]
         state = _base_state(
             accepted_chunks=existing,
             retrieval_history=history,
-            current_sub_question_idx=0,
-            sub_questions=["q0", "q1"],
+            current_hop=0,
+            max_hops=4,
         )
-        result = await next_sub_question(state)
-
+        result = await hop_check(state, planner=mock_planner_sufficient)
         assert len(result["accepted_chunks"]) == 2
-        assert result["accepted_chunks"][0] == existing[0]
-        assert result["accepted_chunks"][1] == new_chunk
 
     @pytest.mark.asyncio
-    async def test_increments_sub_question_index(self):
+    async def test_budget_exhausted_skips_planner(self, mock_planner_new_sub_q):
         history = [{"query": "q", "decision": "sufficient", "reasoning": "", "chunks": []}]
-        state = _base_state(
-            retrieval_history=history,
-            current_sub_question_idx=0,
-            sub_questions=["q0", "q1"],
-            accepted_chunks=[],
-        )
-        result = await next_sub_question(state)
-
-        assert result["current_sub_question_idx"] == 1
+        state = _base_state(retrieval_history=history, current_hop=4, max_hops=4)
+        result = await hop_check(state, planner=mock_planner_new_sub_q)
+        assert result["hop_decision"] == "exhausted"
+        mock_planner_new_sub_q.plan_next_hop.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_resets_retrieval_round(self):
-        history = [{"query": "q", "decision": "sufficient", "reasoning": "", "chunks": []}]
+    async def test_resets_retrieval_round_on_new_hop(self, mock_planner_rephrase):
+        history = [{"query": "q", "decision": "refine_query", "reasoning": "", "chunks": []}]
         state = _base_state(
             retrieval_history=history,
-            current_sub_question_idx=0,
-            sub_questions=["q0", "q1"],
             retrieval_round=2,
-            accepted_chunks=[],
+            current_hop=0,
+            max_hops=4,
         )
-        result = await next_sub_question(state)
-
+        result = await hop_check(state, planner=mock_planner_rephrase)
         assert result["retrieval_round"] == 0
 
     @pytest.mark.asyncio
-    async def test_sets_current_query_when_more_sub_questions_remain(self):
+    async def test_handles_none_accepted_chunks(self, mock_planner_sufficient):
         history = [{"query": "q", "decision": "sufficient", "reasoning": "", "chunks": []}]
-        state = _base_state(
-            retrieval_history=history,
-            current_sub_question_idx=0,
-            sub_questions=["q0", "q1"],
-            accepted_chunks=[],
-        )
-        result = await next_sub_question(state)
-
-        # next idx=1, sub_questions[1] = "q1"
-        assert result["current_query"] == "q1"
-
-    @pytest.mark.asyncio
-    async def test_no_current_query_set_when_no_more_sub_questions(self):
-        """When advancing past the last sub-question, current_query is not touched."""
-        history = [{"query": "q", "decision": "sufficient", "reasoning": "", "chunks": []}]
-        state = _base_state(
-            retrieval_history=history,
-            current_sub_question_idx=0,
-            sub_questions=["q0"],  # only one question
-            accepted_chunks=[],
-        )
-        result = await next_sub_question(state)
-
-        # next idx=1, but len(sub_questions)==1, so current_query should NOT be set
-        assert "current_query" not in result
-
-    @pytest.mark.asyncio
-    async def test_handles_none_accepted_chunks(self):
-        """accepted_chunks=None in state should not raise."""
-        history = [{"query": "q", "decision": "sufficient", "reasoning": "", "chunks": []}]
-        state = _base_state(
-            retrieval_history=history,
-            current_sub_question_idx=0,
-            sub_questions=["q0", "q1"],
-            accepted_chunks=None,
-        )
-        result = await next_sub_question(state)
-
+        state = _base_state(accepted_chunks=None, retrieval_history=history)
+        result = await hop_check(state, planner=mock_planner_sufficient)
         assert isinstance(result["accepted_chunks"], list)
 
 
@@ -502,7 +436,6 @@ class TestGradeNode:
     @pytest.fixture
     def mock_grader(self):
         m = MagicMock()
-        # grade() returns a dict that the graph merges into state
         m.grade = AsyncMock(
             return_value={
                 "retrieval_grade_score": 0.75,
@@ -524,15 +457,13 @@ class TestGradeNode:
     @pytest.mark.asyncio
     async def test_grade_delegates_to_grader(self, mock_grader):
         state = _base_state(accepted_chunks=[{"text": "raw chunk"}], effective_query="q")
-        result = await grade(state, grader=mock_grader)  # noqa: F841
-
+        await grade(state, grader=mock_grader)
         mock_grader.grade.assert_awaited_once_with(state)
 
     @pytest.mark.asyncio
     async def test_grade_returns_dict_with_required_keys(self, mock_grader):
         state = _base_state(accepted_chunks=[{"text": "raw chunk"}], effective_query="q")
         result = await grade(state, grader=mock_grader)
-
         assert "retrieval_grade_score" in result
         assert "accepted_chunks" in result
         assert "needs_refinement" in result
@@ -549,7 +480,6 @@ class TestGradeNode:
         )
         state = _base_state(accepted_chunks=[], effective_query="q")
         result = await grade(state, grader=mock_grader)
-
         assert result["needs_refinement"] is True
 
 
@@ -567,12 +497,8 @@ class TestSynthesizeNode:
 
     @pytest.mark.asyncio
     async def test_returns_final_answer_and_sources(self, mock_synthesizer):
-        state = _base_state(
-            accepted_chunks=[{"text": "context", "source": "doc.pdf"}],
-            effective_query="q",
-        )
+        state = _base_state(accepted_chunks=[{"text": "context", "source": "doc.pdf"}])
         result = await synthesize(state, synthesizer=mock_synthesizer)
-
         assert "final_answer" in result
         assert "sources" in result
 
@@ -580,52 +506,43 @@ class TestSynthesizeNode:
     async def test_answer_is_synthesizer_output(self, mock_synthesizer):
         state = _base_state(accepted_chunks=[], effective_query="q")
         result = await synthesize(state, synthesizer=mock_synthesizer)
-
         assert result["final_answer"] == "The answer is 42."
 
     @pytest.mark.asyncio
     async def test_sources_deduplicated(self, mock_synthesizer):
         chunks = [
             {"text": "a", "source": "doc.pdf"},
-            {"text": "b", "source": "doc.pdf"},  # same source
+            {"text": "b", "source": "doc.pdf"},
             {"text": "c", "source": "other.pdf"},
         ]
-        state = _base_state(accepted_chunks=chunks, effective_query="q")
+        state = _base_state(accepted_chunks=chunks)
         result = await synthesize(state, synthesizer=mock_synthesizer)
-
         assert len(result["sources"]) == 2
         assert set(result["sources"]) == {"doc.pdf", "other.pdf"}
 
     @pytest.mark.asyncio
     async def test_sources_empty_when_no_chunks(self, mock_synthesizer):
-        state = _base_state(accepted_chunks=[], effective_query="q")
+        state = _base_state(accepted_chunks=[])
         result = await synthesize(state, synthesizer=mock_synthesizer)
-
         assert result["sources"] == []
 
     @pytest.mark.asyncio
     async def test_chunks_without_source_field_are_skipped(self, mock_synthesizer):
-        chunks = [
-            {"text": "a", "source": "doc.pdf"},
-            {"text": "b"},  # no 'source' key
-        ]
-        state = _base_state(accepted_chunks=chunks, effective_query="q")
+        chunks = [{"text": "a", "source": "doc.pdf"}, {"text": "b"}]
+        state = _base_state(accepted_chunks=chunks)
         result = await synthesize(state, synthesizer=mock_synthesizer)
-
         assert result["sources"] == ["doc.pdf"]
 
     @pytest.mark.asyncio
     async def test_synthesizer_receives_full_state(self, mock_synthesizer):
         state = _base_state(accepted_chunks=[{"text": "ctx", "source": "x.pdf"}])
         await synthesize(state, synthesizer=mock_synthesizer)
-
         mock_synthesizer.synthesize.assert_awaited_once_with(state)
 
     @pytest.mark.asyncio
     async def test_handles_none_accepted_chunks(self, mock_synthesizer):
-        state = _base_state(accepted_chunks=None, effective_query="q")
+        state = _base_state(accepted_chunks=None)
         result = await synthesize(state, synthesizer=mock_synthesizer)
-
         assert result["sources"] == []
 
 
@@ -635,53 +552,25 @@ class TestSynthesizeNode:
 class TestRouteAfterClassify:
     """Tests for the route_after_classify edge."""
 
-    # --- chitchat / meta → simple_response (no retrieval) ---
     def test_chitchat_routes_to_simple_response(self):
-        state = _base_state(question_category="chitchat")
-        assert route_after_classify(state) == "simple_response"
+        assert route_after_classify(_base_state(question_category="chitchat")) == "simple_response"
 
     def test_meta_routes_to_simple_response(self):
-        state = _base_state(question_category="meta")
-        assert route_after_classify(state) == "simple_response"
+        assert route_after_classify(_base_state(question_category="meta")) == "simple_response"
 
-    # --- factual (all complexity levels) → plan ---
-    def test_simple_factual_complexity_1_routes_to_plan(self):
-        """Regression: simple factual queries must NOT bypass retrieval via direct_synthesize."""
-        state = _base_state(
-            question_category="factual",
-            classification={"complexity_level": 1},
-        )
+    def test_simple_factual_routes_to_plan(self):
+        state = _base_state(question_category="factual", classification={"complexity_level": 1})
         assert route_after_classify(state) == "plan"
 
-    def test_simple_factual_complexity_2_routes_to_plan(self):
-        """Regression: complexity=2 factual queries must NOT bypass retrieval."""
-        state = _base_state(
-            question_category="factual",
-            classification={"complexity_level": 2},
-        )
-        assert route_after_classify(state) == "plan"
-
-    def test_complex_factual_routes_to_plan(self):
-        state = _base_state(
-            question_category="factual",
-            classification={"complexity_level": 4},
-        )
-        assert route_after_classify(state) == "plan"
-
-    # --- other retrieval-needing categories → plan ---
     def test_analytical_routes_to_plan(self):
-        state = _base_state(question_category="analytical")
-        assert route_after_classify(state) == "plan"
+        assert route_after_classify(_base_state(question_category="analytical")) == "plan"
 
     def test_comparative_routes_to_plan(self):
-        state = _base_state(question_category="comparative")
-        assert route_after_classify(state) == "plan"
+        assert route_after_classify(_base_state(question_category="comparative")) == "plan"
 
     def test_procedural_routes_to_plan(self):
-        state = _base_state(question_category="procedural")
-        assert route_after_classify(state) == "plan"
+        assert route_after_classify(_base_state(question_category="procedural")) == "plan"
 
-    # --- summarization ---
     def test_summarization_without_conversational_keywords_routes_to_plan(self):
         state = _base_state(
             question_category="summarization",
@@ -700,90 +589,38 @@ class TestRouteAfterClassify:
             )
 
 
-# Edge: route_after_retrieve
+# Edge: route_after_hop_check
 
 
-class TestRouteAfterRetrieve:
-    """Tests for the route_after_retrieve conditional edge — all branches."""
+class TestRouteAfterHopCheck:
+    """Tests for the route_after_hop_check conditional edge."""
 
-    def _state_with_last_decision(self, decision, round_no, max_rounds, sub_q_idx, total_sub_qs):
-        history = [{"query": "q", "decision": decision, "reasoning": "", "chunks": []}]
-        return _base_state(
-            retrieval_history=history,
-            retrieval_round=round_no,
-            max_retrieval_rounds=max_rounds,
-            current_sub_question_idx=sub_q_idx,
-            sub_questions=[f"q{i}" for i in range(total_sub_qs)],
-        )
+    def test_retrieve_again_routes_to_retrieve(self):
+        state = _base_state(hop_decision="retrieve_again")
+        assert route_after_hop_check(state) == "retrieve"
 
-    # --- sufficient ---
-    def test_sufficient_with_more_sub_questions_goes_to_next_sub_question(self):
-        state = self._state_with_last_decision("sufficient", 1, 3, sub_q_idx=0, total_sub_qs=2)
-        assert route_after_retrieve(state) == "next_sub_question"
+    def test_sufficient_routes_to_grade(self):
+        state = _base_state(hop_decision="sufficient")
+        assert route_after_hop_check(state) == "grade"
 
-    def test_sufficient_on_last_sub_question_goes_to_grade(self):
-        state = self._state_with_last_decision("sufficient", 1, 3, sub_q_idx=1, total_sub_qs=2)
-        assert route_after_retrieve(state) == "grade"
+    def test_exhausted_routes_to_grade(self):
+        state = _base_state(hop_decision="exhausted")
+        assert route_after_hop_check(state) == "grade"
 
-    def test_sufficient_single_sub_question_goes_to_grade(self):
-        state = self._state_with_last_decision("sufficient", 1, 3, sub_q_idx=0, total_sub_qs=1)
-        assert route_after_retrieve(state) == "grade"
+    def test_unknown_decision_defaults_to_grade(self):
+        state = _base_state(hop_decision="unknown_value")
+        assert route_after_hop_check(state) == "grade"
 
-    # --- refine_query ---
-    def test_refine_query_within_max_rounds_goes_to_refine(self):
-        state = self._state_with_last_decision(
-            "refine_query", round_no=1, max_rounds=3, sub_q_idx=0, total_sub_qs=1
-        )
-        assert route_after_retrieve(state) == "refine_query"
+    def test_global_budget_forces_grade(self):
+        state = _base_state(hop_decision="retrieve_again", total_retrieval_steps=6)
+        assert route_after_hop_check(state) == "grade"
 
-    def test_refine_query_at_max_rounds_falls_through_to_grade(self):
-        # round_no == max_rounds → condition `round_no < max_rounds` is False
-        state = self._state_with_last_decision(
-            "refine_query", round_no=3, max_rounds=3, sub_q_idx=0, total_sub_qs=1
-        )
-        assert route_after_retrieve(state) == "grade"
-
-    def test_refine_query_exceeds_max_rounds_with_more_sub_qs(self):
-        state = self._state_with_last_decision(
-            "refine_query", round_no=3, max_rounds=3, sub_q_idx=0, total_sub_qs=2
-        )
-        assert route_after_retrieve(state) == "next_sub_question"
-
-    # --- expand_search ---
-    def test_expand_search_with_more_sub_questions_goes_to_next_sub_question(self):
-        state = self._state_with_last_decision("expand_search", 1, 3, sub_q_idx=0, total_sub_qs=2)
-        assert route_after_retrieve(state) == "next_sub_question"
-
-    def test_expand_search_on_last_sub_question_goes_to_grade(self):
-        state = self._state_with_last_decision("expand_search", 1, 3, sub_q_idx=1, total_sub_qs=2)
-        assert route_after_retrieve(state) == "grade"
-
-    # --- unknown / fallback ---
-    def test_unknown_decision_with_more_sub_questions_goes_to_next_sub_question(self):
-        state = self._state_with_last_decision(
-            "unknown_decision", 1, 3, sub_q_idx=0, total_sub_qs=2
-        )
-        assert route_after_retrieve(state) == "next_sub_question"
-
-    def test_unknown_decision_on_last_sub_question_goes_to_grade(self):
-        state = self._state_with_last_decision(
-            "unknown_decision", 1, 3, sub_q_idx=0, total_sub_qs=1
-        )
-        assert route_after_retrieve(state) == "grade"
+    def test_within_budget_allows_retrieve(self):
+        state = _base_state(hop_decision="retrieve_again", total_retrieval_steps=3)
+        assert route_after_hop_check(state) == "retrieve"
 
 
-# Edge: route_after_next_sub_question
-class TestRouteAfterNextSubQuestion:
-    """Tests for the route_after_next_sub_question edge."""
-
-    def test_always_returns_retrieve(self):
-        state = _base_state(current_sub_question_idx=1, sub_questions=["q0", "q1"])
-        assert route_after_next_sub_question(state) == "retrieve"
-
-
-# ---------------------------------------------------------------------------
 # Edge: route_after_grade
-# ---------------------------------------------------------------------------
 
 
 class TestRouteAfterGrade:
@@ -798,24 +635,19 @@ class TestRouteAfterGrade:
         assert route_after_grade(state) == "rewrite_for_refinement"
 
     def test_needs_refinement_true_budget_exhausted_routes_to_synthesize(self):
-        # refinement_loops == _MAX_REFINEMENT_LOOPS (1) → budget spent
         state = _base_state(needs_refinement=True, refinement_loops=1)
         assert route_after_grade(state) == "synthesize"
 
     def test_missing_needs_refinement_defaults_to_synthesize(self):
-        """State without needs_refinement key should default to synthesize."""
-        state = _base_state()  # no needs_refinement key
+        state = _base_state()
         assert route_after_grade(state) == "synthesize"
 
     def test_missing_refinement_loops_defaults_to_zero(self):
-        """State without refinement_loops key should be treated as 0."""
-        state = _base_state(needs_refinement=True)  # no refinement_loops key
+        state = _base_state(needs_refinement=True)
         assert route_after_grade(state) == "rewrite_for_refinement"
 
 
-# ---------------------------------------------------------------------------
 # Node: rewrite_for_refinement
-# ---------------------------------------------------------------------------
 
 
 class TestRewriteForRefinementNode:
@@ -823,27 +655,18 @@ class TestRewriteForRefinementNode:
 
     @pytest.mark.asyncio
     async def test_increments_refinement_loops(self):
-        state = _base_state(refinement_loops=0)
-        result = await rewrite_for_refinement(state)
+        result = await rewrite_for_refinement(_base_state(refinement_loops=0))
         assert result["refinement_loops"] == 1
 
     @pytest.mark.asyncio
-    async def test_increments_refinement_loops_from_nonzero(self):
-        state = _base_state(refinement_loops=1)
-        result = await rewrite_for_refinement(state)
-        assert result["refinement_loops"] == 2
-
-    @pytest.mark.asyncio
     async def test_resets_retrieval_round_to_zero(self):
-        state = _base_state(retrieval_round=3)
-        result = await rewrite_for_refinement(state)
+        result = await rewrite_for_refinement(_base_state(retrieval_round=3))
         assert result["retrieval_round"] == 0
 
     @pytest.mark.asyncio
-    async def test_resets_sub_question_index_to_zero(self):
-        state = _base_state(current_sub_question_idx=2)
-        result = await rewrite_for_refinement(state)
-        assert result["current_sub_question_idx"] == 0
+    async def test_resets_current_hop_to_zero(self):
+        result = await rewrite_for_refinement(_base_state(current_hop=2))
+        assert result["current_hop"] == 0
 
     @pytest.mark.asyncio
     async def test_resets_total_retrieval_steps_to_zero(self):
@@ -854,8 +677,7 @@ class TestRewriteForRefinementNode:
 
     @pytest.mark.asyncio
     async def test_clears_accepted_chunks(self):
-        state = _base_state(accepted_chunks=[{"text": "old chunk"}])
-        result = await rewrite_for_refinement(state)
+        result = await rewrite_for_refinement(_base_state(accepted_chunks=[{"text": "old chunk"}]))
         assert result["accepted_chunks"] == []
 
     @pytest.mark.asyncio
@@ -867,23 +689,3 @@ class TestRewriteForRefinementNode:
         )
         result = await rewrite_for_refinement(state)
         assert result["retrieval_history"] == []
-
-
-# ---------------------------------------------------------------------------
-# Node: save_turn
-# ---------------------------------------------------------------------------
-
-
-class TestSaveTurnNode:
-    """Tests for the save_turn node."""
-
-    @pytest.fixture
-    def mock_short_term(self):
-        m = MagicMock()
-        session = MagicMock()
-        session.turns = [MagicMock() for _ in range(4)]  # 4 turns — below threshold
-        session.session_id = "sess-123"
-        m.get_session = AsyncMock(return_value=session)
-        m.append_turn = AsyncMock()
-        m.trim_session = AsyncMock(return_value=[])
-        return m

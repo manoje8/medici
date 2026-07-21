@@ -10,17 +10,19 @@ class State(TypedDict):
 
     # planning
     question_category: str
-    sub_questions: list[str]
+    hop_questions: list[str]
     classification: dict
 
     # retrieval loop
-    current_sub_question_idx: int
+    current_hop: int
+    max_hops: int
     current_query: str
     retrieval_round: int
     total_retrieval_steps: int
     max_retrieval_rounds: int
     retrieval_history: list[dict]
     accepted_chunks: list[dict]
+    hop_decision: str  # "retrieve_again" | "sufficient" | "exhausted"
 
     final_answer: str
     sources: list[str]

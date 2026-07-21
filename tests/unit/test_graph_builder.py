@@ -16,10 +16,6 @@ import pytest
 
 from src.agents.graph.graph import build_rag_graph
 
-# ---------------------------------------------------------------------------
-# Fixtures: all agent stubs
-# ---------------------------------------------------------------------------
-
 
 @pytest.fixture
 def mock_agents():
@@ -34,11 +30,6 @@ def mock_agents():
     }
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
 class TestBuildRagGraph:
     def test_build_returns_state_graph_builder(self, mock_agents):
         """build_rag_graph should return a StateGraph builder (not compiled)."""
@@ -47,15 +38,14 @@ class TestBuildRagGraph:
         assert builder is not None
 
     def test_all_expected_nodes_present(self, mock_agents):
-        """All 10 nodes must be registered in the builder."""
+        """All expected nodes must be registered in the builder."""
         builder = build_rag_graph(**mock_agents)
         expected_nodes = {
             "rewrite_query",
             "route",
             "plan",
             "retrieve",
-            "refine_query",
-            "next_sub_question",
+            "hop_check",
             "grade",
             "synthesize",
             "direct_synthesize",

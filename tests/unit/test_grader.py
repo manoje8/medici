@@ -18,10 +18,6 @@ import pytest
 from src.agents.agentic.grader import _GRADE_CONCURRENCY, _GRADE_MAX_RETRIES, GraderAgent
 from src.common.llm.base import LLMContentError
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_llm(return_value=None, side_effect=None):
     """Return a mock LLM client whose complete() behaves as instructed."""
@@ -55,7 +51,7 @@ def _base_state(**overrides):
         "current_query": "What is RAG?",
         "was_rewritten": False,
         "question_category": "factual",
-        "sub_questions": ["What is RAG?"],
+        "hop_questions": ["What is RAG?"],
         "classification": {"retrieval_strategy": {"target_chunks": 3}},
         "current_sub_question_idx": 0,
         "retrieval_round": 0,
@@ -117,11 +113,6 @@ class TestEffectiveQueryFallback:
         assert "original_message" not in prompt  # literal string must NOT appear
 
 
-# ---------------------------------------------------------------------------
-# Fix A: semaphore-bounded concurrency
-# ---------------------------------------------------------------------------
-
-
 class TestSemaphoreConcurrency:
     """Fix A — at most _GRADE_CONCURRENCY LLM calls are in-flight simultaneously."""
 
@@ -177,11 +168,6 @@ class TestSemaphoreConcurrency:
 
         # All chunks should be accepted because our mock always returns relevant=True
         assert len(accepted) == n
-
-
-# ---------------------------------------------------------------------------
-# Fix B: retry + fail-open / fail-closed
-# ---------------------------------------------------------------------------
 
 
 class TestGradeSingleChunkRetry:
@@ -261,11 +247,6 @@ class TestGradeSingleChunkRetry:
         result = await grader._grade_single_chunk(_make_chunk(), "query", [])
 
         assert result["relevant"] is False
-
-
-# ---------------------------------------------------------------------------
-# Helper method shapes
-# ---------------------------------------------------------------------------
 
 
 class TestDefaultGradeResults:

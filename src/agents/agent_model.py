@@ -26,7 +26,7 @@ class AgentState:
     original_question: str
     doc_id_filter: str | None = None
 
-    sub_questions: list[str] = field(default_factory=list)
+    hop_questions: list[str] = field(default_factory=list)
 
     retrieval_rounds: list[RetrievalRound] = field(default_factory=list)
     accepted_chunks: list[dict] = field(default_factory=list)

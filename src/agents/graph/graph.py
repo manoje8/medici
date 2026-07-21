@@ -6,16 +6,14 @@ from langgraph.graph import END, StateGraph
 from src.agents.graph.edges import (
     route_after_classify,
     route_after_grade,
-    route_after_next_sub_question,
-    route_after_retrieve,
+    route_after_hop_check,
 )
 from src.agents.graph.nodes import (
     direct_synthesize,
     grade,
     handle_simple_response,
-    next_sub_question,
+    hop_check,
     plan,
-    refine_query,
     retrieve,
     rewrite_for_refinement,
     rewrite_query,
@@ -44,8 +42,7 @@ def build_rag_graph(
     builder.add_node("route", partial(route, router=router))
     builder.add_node("plan", partial(plan, planner=planner))
     builder.add_node("retrieve", partial(retrieve, retrieval_agent=retrieval_agent))
-    builder.add_node("refine_query", partial(refine_query, retrieval_agent=retrieval_agent))
-    builder.add_node("next_sub_question", partial(next_sub_question))
+    builder.add_node("hop_check", partial(hop_check, planner=planner))
     builder.add_node("grade", partial(grade, grader=grader))
     builder.add_node("synthesize", partial(synthesize, synthesizer=synthesizer))
     builder.add_node("direct_synthesize", partial(direct_synthesize, synthesizer=synthesizer))
@@ -68,21 +65,11 @@ def build_rag_graph(
     )
 
     builder.add_edge("plan", "retrieve")
-    builder.add_conditional_edges(
-        "retrieve",
-        route_after_retrieve,
-        {
-            "refine_query": "refine_query",
-            "next_sub_question": "next_sub_question",
-            "grade": "grade",
-        },
-    )
-
-    builder.add_edge("refine_query", "retrieve")
+    builder.add_edge("retrieve", "hop_check")
 
     builder.add_conditional_edges(
-        "next_sub_question",
-        route_after_next_sub_question,
+        "hop_check",
+        route_after_hop_check,
         {
             "retrieve": "retrieve",
             "grade": "grade",

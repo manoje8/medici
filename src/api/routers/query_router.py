@@ -26,13 +26,11 @@ def create_query_routes(api_key: str | None = None, top_k: int = 60):
             session_id=body.session_id,
             user_id=body.user_id,
         )
-        # Surface telemetry and cache metadata to callers
         return {
             "answer": result["answer"],
             "session_id": result["session_id"],
             "sources": result["sources"],
             "query_was_rewritten": result["query_was_rewritten"],
-            "retrieval_rounds": result["retrieval_rounds"],
             "cache_hit": result.get("cache_hit", False),
             "cache_similarity": result.get("cache_similarity"),
             "token_usage": result.get("token_usage", {}),

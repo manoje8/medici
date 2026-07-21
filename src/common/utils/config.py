@@ -52,6 +52,7 @@ class Config:
 
     VECTOR_SIZE = int(os.getenv("VECTOR_SIZE", 1356))
     MAX_RETRIEVAL_ROUND = int(os.getenv("MAX_RETRIEVAL_ROUND", 1))
+    MAX_HOPS = int(os.getenv("MAX_HOPS", 4))
     MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", 100_000))
 
     # Token-budget guard
@@ -98,6 +99,7 @@ class Config:
 
     CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", 512))
     CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", 64))
+    FLASHRANK_CACHE_DIR: str = os.getenv("FLASHRANK_CACHE_DIR", "/flashrank")
 
 
 config = Config()

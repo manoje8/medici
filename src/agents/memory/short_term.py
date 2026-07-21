@@ -3,7 +3,6 @@ from uuid import uuid4
 
 import logfire
 import redis.asyncio as redis
-import redis.exceptions
 
 from src.agents.memory.conversation_model import ConversationSession, ConversationTurn
 from src.common.utils.config import config
@@ -27,13 +26,13 @@ class ShortTermMemoryManager:
             await self.redis.setex(
                 f"session:{session.session_id}", self.session_ttl, json.dumps(data)
             )
-        except redis.exceptions.RedisError:
+        except redis.RedisError:
             logfire.warning("session_save_failed", session_id=session.session_id, exc_info=True)
 
     async def get_session(self, session_id: str) -> ConversationSession | None:
         try:
             data = await self.redis.get(f"session:{session_id}")
-        except redis.exceptions.RedisError:
+        except redis.RedisError:
             logfire.warning("session_fetch_failed", session_id=session_id, exc_info=True)
             return None
 
