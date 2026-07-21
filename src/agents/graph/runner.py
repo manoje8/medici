@@ -83,8 +83,18 @@ class GraphPipeline:
 
         try:
             result = await self.graph.ainvoke(initial_state, config=graph_config)
-        except Exception:
-            logfire.warning("Graph invocation Error")
+        except Exception as e:
+            logfire.warning(f"Graph invocation Error: {str(e)}")
+            return {
+                "answer": "I apologize, but I encountered an error processing your request. Please try again.",
+                "session_id": session.session_id,
+                "sources": [],
+                "query_was_rewritten": False,
+                "retrieval_hops": 0,
+                "cache_hit": False,
+                "token_usage": {},
+                "error": str(e),
+            }
 
         token_usage = {}
         total_calls = 0

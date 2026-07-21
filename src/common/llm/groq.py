@@ -13,7 +13,7 @@ class GroqClient(BaseLLM):
             api_key=config.GROQ_API_KEY,
             temperature=kwargs.get("temperature", 0.1),
             max_tokens=max_tokens,
-            max_retries=kwargs.get("max_retries", 1),
+            max_retries=kwargs.get("max_retries", 0),
             timeout=self.timeout_seconds,
         )
 

@@ -7,6 +7,7 @@ from typing import Any
 
 import logfire
 from docling.datamodel.pipeline_options import TableFormerMode
+from pypdf import PdfReader
 
 from src.common.utils.config import config
 from src.common.utils.constants import HTML_FORMATS, OFFICE_FORMATS, TEXT_FORMATS
@@ -208,6 +209,27 @@ class DoclingParser(Parser):
                     "page_idx": page_idx,
                 }
 
+    def _get_pdf_page_ranges(self, file_path: Path) -> list[tuple[int, int] | None]:
+        if file_path.suffix.lower() != ".pdf":
+            return [None]
+
+        threshold = getattr(config, "PDF_CHUNK_THRESHOLD_PAGES", 150)
+        chunk_size = getattr(config, "PDF_CHUNK_SIZE_PAGES", 75)
+
+        try:
+            num_pages = len(PdfReader(str(file_path)).pages)
+        except Exception as e:
+            logfire.warning(f"Could not read page count for {file_path.name}: {e}")
+            return [None]
+
+        if num_pages <= threshold:
+            return [None]
+
+        return [
+            (start, min(start + chunk_size - 1, num_pages))
+            for start in range(1, num_pages + 1, chunk_size)
+        ]
+
     def _parse_with_converter(
         self,
         file_path: Path,
@@ -215,12 +237,10 @@ class DoclingParser(Parser):
     ) -> list[dict[str, Any]]:
         """
         Shared core logic for all supported formats.
-        Converts the document, traverses the block tree, and frees doc_dict immediately.
+        Converts the document (optionally in page-range chunks for large PDFs),
+        traverses the block tree, and frees doc_dict after each chunk.
         """
         converter = self._get_converter()
-        result = converter.convert(str(file_path))
-
-        doc_dict = result.document.export_to_dict()
 
         if output_dir:
             base_output_dir = self._unique_output_dir(output_dir, file_path)
@@ -231,17 +251,31 @@ class DoclingParser(Parser):
 
         file_subdir = file_path.parent / file_path.stem / "docling"
 
-        try:
-            content_list = self._read_from_block_recursive(
-                doc_dict["body"],
-                "body",
-                file_subdir,
-                count(),
-                "0",
-                doc_dict,
-            )
-        finally:
-            del doc_dict
+        content_list: list[dict[str, Any]] = []
+        for page_range in self._get_pdf_page_ranges(file_path):
+            convert_kwargs = {"page_range": page_range} if page_range else {}
+            result = converter.convert(str(file_path), **convert_kwargs)
+
+            if result.status.name != "SUCCESS":
+                logfire.warning(
+                    f"Docling returned status={result.status.name} for "
+                    f"{file_path.name} (page_range={page_range}); errors: {result.errors}"
+                )
+
+            doc_dict = result.document.export_to_dict()
+            try:
+                content_list.extend(
+                    self._read_from_block_recursive(
+                        doc_dict["body"],
+                        "body",
+                        file_subdir,
+                        count(),
+                        "0",
+                        doc_dict,
+                    )
+                )
+            finally:
+                del doc_dict
 
         return content_list
 
