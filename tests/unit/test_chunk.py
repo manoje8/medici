@@ -102,12 +102,14 @@ class TestChunkDataclass:
             metadata={},
         )
         payload = chunk.to_quant_payload()
+        print(payload.keys())
         expected_keys = {
             "text",
             "chunk_index",
             "doc_id",
             "source_file",
             "chunk_type",
+            "content_type",
             "section_title",
             "page_numbers",
             "token_count",

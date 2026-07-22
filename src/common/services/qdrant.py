@@ -229,6 +229,9 @@ class QdrantStorageService:
                 "source": r.payload.get("source_file", ""),
                 "doc_id": r.payload.get("doc_id", ""),
                 "chunk_index": r.payload.get("chunk_index"),
+                "content_type": r.payload.get("content_type", "text"),
+                "image_path": r.payload.get("image_path", ""),
+                "page_numbers": r.payload.get("page_numbers", []),
             }
             for r in result.points
         ]
@@ -266,6 +269,9 @@ class QdrantStorageService:
                         "chunk_index": point.payload.get("chunk_index"),
                         "section_title": point.payload.get("section_title", ""),
                         "source_file": point.payload.get("source_file", ""),
+                        "content_type": point.payload.get("content_type", "text"),
+                        "image_path": point.payload.get("image_path", ""),
+                        "page_numbers": point.payload.get("page_numbers", []),
                     }
                 )
 

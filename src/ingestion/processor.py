@@ -253,6 +253,7 @@ class Processor:
                 doc_id=doc_id,
                 source_file=str(file_path),
                 start_index=0,
+                storage=self.in_storage,
             )
             chunks = self._interleave_chunks(text_chunks, multimodal_chunks, text_blocks or [])
         else:

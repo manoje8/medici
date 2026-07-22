@@ -36,6 +36,9 @@ class GoogleCloudStorage(BaseStorage):
 
         return f"gs://{self.bucket.name}/{blob.name}"
 
+    def save_bytes(self, key: str, data: bytes) -> str:
+        return self.upload(key, data)
+
     def download(self, key: str):
         blob = self.bucket.blob(self._full_key(key))
 

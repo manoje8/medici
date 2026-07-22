@@ -26,6 +26,7 @@ class State(TypedDict):
 
     final_answer: str
     sources: list[str]
+    images: list[dict]
     doc_id_filter: str | None
 
     resolved_references: list

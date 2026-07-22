@@ -7,6 +7,10 @@ class BaseStorage(ABC):
         """Upload a file, return a URI or path"""
 
     @abstractmethod
+    def save_bytes(self, key: str, data: bytes) -> str:
+        """Write raw bytes to storage under *key*.  Returns the resolved path/URI."""
+
+    @abstractmethod
     def download(self, key: str):
         """Download a file by key"""
 

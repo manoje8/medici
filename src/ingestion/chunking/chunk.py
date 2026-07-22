@@ -21,14 +21,16 @@ class Chunk:
     parent_window_start: int = 0
     parent_window_end: int = 0
     metadata: dict = field(default_factory=dict)
+    image_path: str = ""
 
     def to_quant_payload(self) -> dict:
-        return {
+        payload = {
             "text": self.text,
             "chunk_index": self.chunk_index,
             "doc_id": self.doc_id,
             "source_file": self.source_file,
             "chunk_type": self.chunk_type,
+            "content_type": self.chunk_type,
             "section_title": self.section_title,
             "page_numbers": self.page_numbers,
             "token_count": self.token_count,
@@ -36,6 +38,9 @@ class Chunk:
             "parent_token_count": self.parent_token_count,
             "metadata": self.metadata,
         }
+        if self.image_path:
+            payload["image_path"] = self.image_path
+        return payload
 
 
 @dataclass
@@ -122,6 +127,7 @@ def build_parent_child_chunk(
                 parent_token_count=parent_token_count,
                 parent_window_start=start,
                 parent_window_end=end,
+                image_path=chunk.image_path,
             )
         )
 

@@ -3,6 +3,7 @@ from typing import Any
 
 import logfire
 
+from src.common.storage.base_storage import BaseStorage
 from src.ingestion.chunking.chunk import (
     Chunk,
     extract_page_numbers,
@@ -47,6 +48,7 @@ class FixedWindow(Chunker):
         doc_id: str,
         source_file: str,
         start_index: int = 0,
+        storage: "BaseStorage | None" = None,
     ) -> tuple[list[Chunk], list[dict[str, Any]]]:
         results: list[Chunk] = []
         pending_images: list[dict[str, Any]] = []
@@ -54,9 +56,24 @@ class FixedWindow(Chunker):
 
         for item in items:
             item_type = item.get("type", "unknown")
+            image_path = ""
 
             if item_type == "image":
                 caption = serialize_image_caption(item)
+
+                image_bytes: bytes | None = item.get("image_data") or item.get("image_bytes")
+                if image_bytes and storage is not None:
+                    img_key = f"images/{doc_id}/chunk_{idx}.png"
+                    try:
+                        image_path = storage.save_bytes(img_key, image_bytes)
+                        logfire.debug(
+                            "image_saved_to_storage",
+                            key=img_key,
+                            size_bytes=len(image_bytes),
+                        )
+                    except Exception as exc:
+                        logfire.warning("image_save_failed", key=img_key, error=str(exc))
+
                 if caption is None:
                     pending_images.append(
                         {
@@ -96,6 +113,7 @@ class FixedWindow(Chunker):
                         block_types=[item_type],
                         token_count=token_count,
                         metadata=metadata,
+                        image_path=image_path,
                     )
                 )
                 idx += 1
@@ -119,6 +137,7 @@ class FixedWindow(Chunker):
                         block_types=[item_type],
                         token_count=self.token_len_fn(body),
                         metadata=metadata,
+                        image_path=image_path if idx == start_index else "",
                     )
                 )
                 idx += 1

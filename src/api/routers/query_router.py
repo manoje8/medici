@@ -30,6 +30,7 @@ def create_query_routes(api_key: str | None = None, top_k: int = 60):
             "answer": result["answer"],
             "session_id": result["session_id"],
             "sources": result["sources"],
+            "images": result.get("images", []),
             "query_was_rewritten": result["query_was_rewritten"],
             "cache_hit": result.get("cache_hit", False),
             "cache_similarity": result.get("cache_similarity"),

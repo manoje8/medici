@@ -176,7 +176,19 @@ async def synthesize(state: State, synthesizer) -> dict:
     accepted_chunks = state.get("accepted_chunks") or []
     sources = list(set(c["source"] for c in accepted_chunks if c.get("source")))
 
-    return {"final_answer": answer, "sources": sources}
+    images = [
+        {
+            "image_path": c["image_path"],
+            "caption": c.get("text", ""),
+            "page_numbers": c.get("page_numbers", []),
+            "score": c.get("score"),
+            "source": c.get("source", ""),
+        }
+        for c in accepted_chunks
+        if c.get("content_type") == "image" and c.get("image_path")
+    ]
+
+    return {"final_answer": answer, "sources": sources, "images": images}
 
 
 async def direct_synthesize(state: State, synthesizer) -> dict:

@@ -17,6 +17,11 @@ class Chunker(ABC):
 
     @abstractmethod
     def chunk_multimodal_items(
-        self, items: list[dict[str, Any]], doc_id: str, source_file: str, start_index: int
+        self,
+        items: list[dict[str, Any]],
+        doc_id: str,
+        source_file: str,
+        start_index: int,
+        storage=None,
     ):
         """Multimodal items definition"""

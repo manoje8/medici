@@ -54,6 +54,13 @@ class LocalStorage(BaseStorage):
 
         return str(target)
 
+    def save_bytes(self, key: str, data: bytes) -> str:
+        """Write raw *data* bytes directly to *key* inside the storage root."""
+        target = self._resolve(key)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        return str(target)
+
     def download(self, key: str):
         target = self._resolve(key)
         if not target.exists():
