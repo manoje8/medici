@@ -39,9 +39,12 @@ _NON_RETRYABLE_LLM_EXCEPTIONS = (
 
 
 class LLMRequestContext:
-    def __init__(self, prompt: str, max_tokens: int = 1024, **kwargs):
+    def __init__(
+        self, prompt: str, max_tokens: int = 1024, system_prompt: str | None = None, **kwargs
+    ):
         self.prompt = prompt
         self.max_tokens = max_tokens
+        self.system_prompt = system_prompt
         self.start_time = datetime.now(UTC)
         self.retry_count = 0
         self.kwargs = kwargs
@@ -110,15 +113,23 @@ class BaseLLM(ABC):
         self._total_completion_tokens = 0
 
     @abstractmethod
-    async def _complete_impl(self, prompt: str, max_token: int, **kwargs) -> LLMResponse:
+    async def _complete_impl(
+        self, prompt: str, max_token: int, system_prompt: str | None = None, **kwargs
+    ) -> LLMResponse:
         pass
 
     async def complete(
-        self, prompt: str, max_tokens: int = 1024, stage_tag: str = "unknown", **kwargs
+        self,
+        prompt: str,
+        max_tokens: int = 1024,
+        stage_tag: str = "unknown",
+        system_prompt: str | None = None,
+        **kwargs,
     ) -> LLMResponse:
         context = LLMRequestContext(
             prompt=prompt,
             max_tokens=max_tokens,
+            system_prompt=system_prompt,
             **kwargs,
         )
 
@@ -132,9 +143,12 @@ class BaseLLM(ABC):
                     stage=stage_tag,
                     attempt=attempt,
                     prompt_length=len(prompt),
+                    has_system_prompt=system_prompt is not None,
                 ) as span:
                     response = await asyncio.wait_for(
-                        self._complete_with_metadata(prompt, max_tokens, context, **kwargs),
+                        self._complete_with_metadata(
+                            prompt, max_tokens, context, system_prompt=system_prompt, **kwargs
+                        ),
                         timeout=self.timeout_seconds,
                     )
                     usage = response.metadata.get("token_usage", {})
@@ -176,9 +190,16 @@ class BaseLLM(ABC):
         raise RuntimeError("Unexpected failure in LLM request")
 
     async def _complete_with_metadata(
-        self, prompt: str, max_tokens: int, context: LLMRequestContext, **kwargs
+        self,
+        prompt: str,
+        max_tokens: int,
+        context: LLMRequestContext,
+        system_prompt: str | None = None,
+        **kwargs,
     ) -> LLMResponse:
-        response = await self._complete_impl(prompt, max_tokens, **kwargs)
+        response = await self._complete_impl(
+            prompt, max_tokens, system_prompt=system_prompt, **kwargs
+        )
         response.metadata.update(
             {
                 "call_time": datetime.utcnow().isoformat(),

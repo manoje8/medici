@@ -12,16 +12,30 @@ class CerebrasAI(BaseLLM):
             api_key=config.CEREBRAS_API_KEY,
         )
 
-    async def _complete_impl(self, prompt: str, max_token: int, **kwargs) -> LLMResponse:
-        response = await self.client.completions.create(
+    async def _complete_impl(
+        self,
+        prompt: str,
+        max_token: int,
+        system_prompt: str | None = None,
+        **kwargs,
+    ) -> LLMResponse:
+        messages: list[dict] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        response = await self.client.chat.completions.create(
             model=self.model,
-            prompt=prompt,
+            messages=messages,
             max_tokens=max_token,
             top_p=kwargs.get("top_p", 0.95),
             temperature=kwargs.get("temperature", 0.1),
         )
 
-        if not response or not response.choices[0].text:
+        choice = response.choices[0]
+        content = choice.message.content if hasattr(choice, "message") else choice.text
+
+        if not response or not content:
             raise ValueError("Cerebras returned empty response")
 
         token_usage = {}
@@ -33,7 +47,7 @@ class CerebrasAI(BaseLLM):
                 "total": response.usage.total_tokens or 0,
             }
 
-        return LLMResponse(response.choices[0].text, {"token_usage": token_usage})
+        return LLMResponse(content, {"token_usage": token_usage})
 
     @property
     def model_name(self) -> str:

@@ -17,19 +17,29 @@ class GeminiClient(BaseLLM):
     def model_name(self) -> str:
         return self.model
 
-    async def _complete_impl(self, prompt: str, max_tokens: int = 1024, **kwargs) -> LLMResponse:
+    async def _complete_impl(
+        self,
+        prompt: str,
+        max_tokens: int = 1024,
+        system_prompt: str | None = None,
+        **kwargs,
+    ) -> LLMResponse:
+        generate_config_kwargs: dict = {
+            "temperature": kwargs.get("temperature", 0.1),
+            "max_output_tokens": max_tokens,
+            "top_p": kwargs.get("top_p", 0.95),
+            "top_k": kwargs.get("top_k", 40),
+        }
+        if system_prompt:
+            generate_config_kwargs["system_instruction"] = system_prompt
+
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None,
             lambda: self.client.models.generate_content(
                 model=self.model,
                 contents=prompt,
-                config=genai.types.GenerateContentConfig(
-                    temperature=kwargs.get("temperature", 0.1),
-                    max_output_tokens=max_tokens,
-                    top_p=kwargs.get("top_p", 0.95),
-                    top_k=kwargs.get("top_k", 40),
-                ),
+                config=genai.types.GenerateContentConfig(**generate_config_kwargs),
             ),
         )
 

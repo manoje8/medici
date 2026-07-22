@@ -21,9 +21,18 @@ class GroqClient(BaseLLM):
     def model_name(self) -> str:
         return self.model
 
-    async def _complete_impl(self, prompt: str, max_tokens: int = 1024, **kwargs) -> LLMResponse:
-        message = [{"role": "user", "content": prompt}]
-        response = await self.client.ainvoke(message)
+    async def _complete_impl(
+        self,
+        prompt: str,
+        max_tokens: int = 1024,
+        system_prompt: str | None = None,
+        **kwargs,
+    ) -> LLMResponse:
+        messages: list[dict] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        response = await self.client.ainvoke(messages)
 
         if not response or not response.content:
             raise RuntimeError("Groq returned empty response")

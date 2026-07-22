@@ -198,9 +198,8 @@ class SynthesizerAgent:
         original_question = self._get_question(state)
         context = _build_context(state)
 
-        prompt = f"""{_FIREWALL_PREAMBLE}
-Answer the following question using only the provided context.
-You are an Enterprise AI Assistant focused on accuracy and precision.
+        prompt = f"""Answer the following question using only the provided context.
+ You are an Enterprise AI Assistant focused on accuracy and precision.
 
 Question: {original_question}
 
@@ -222,7 +221,10 @@ Answer format:
 """
 
         response = await self.llm.complete(
-            prompt, max_tokens=config.SYNTHESIS_MAX_TOKENS_FACTUAL, stage_tag="synthesize_factual"
+            prompt,
+            max_tokens=config.SYNTHESIS_MAX_TOKENS_FACTUAL,
+            stage_tag="synthesize_factual",
+            system_prompt=_FIREWALL_PREAMBLE,
         )
         return self._ensure_citations(response.text, state)
 
@@ -297,8 +299,7 @@ Respond helpfully and offer to assist with document-based questions.
                 "Could you specify which aspects you'd like me to compare?"
             )
 
-        prompt = f"""{_FIREWALL_PREAMBLE}
-Compare and contrast based on the provided context.
+        prompt = f"""Compare and contrast based on the provided context.
 Provide a structured, balanced analysis.
 
 Question: {original_question}
@@ -325,6 +326,7 @@ Rules:
             prompt,
             max_tokens=config.SYNTHESIS_MAX_TOKENS_COMPARATIVE,
             stage_tag="synthesize_comparative",
+            system_prompt=_FIREWALL_PREAMBLE,
         )
         return self._ensure_citations(response.text, state)
 
@@ -337,8 +339,7 @@ Rules:
         original_question = self._get_question(state)
         context = _build_context(state)
 
-        prompt = f"""{_FIREWALL_PREAMBLE}
-Provide a thorough analysis using chain-of-thought reasoning.
+        prompt = f"""Provide a thorough analysis using chain-of-thought reasoning.
 Show your analytical process clearly.
 
 Question: {original_question}
@@ -371,6 +372,7 @@ Rules:
             prompt,
             max_tokens=config.SYNTHESIS_MAX_TOKENS_ANALYTICAL,
             stage_tag="synthesize_analytical",
+            system_prompt=_FIREWALL_PREAMBLE,
         )
         return self._ensure_citations(response.text, state)
 
@@ -390,8 +392,7 @@ Rules:
         ):
             return await self._summarize_conversation(conversational_history)
 
-        prompt = f"""{_FIREWALL_PREAMBLE}
-Create a comprehensive yet concise summary.
+        prompt = f"""Create a comprehensive yet concise summary.
 
 Request: {original_question}
 
@@ -416,6 +417,7 @@ Rules:
             prompt,
             max_tokens=config.SYNTHESIS_MAX_TOKENS_SUMMARIZATION,
             stage_tag="synthesize_summarization",
+            system_prompt=_FIREWALL_PREAMBLE,
         )
         return self._ensure_citations(response.text, state)
 
@@ -429,8 +431,7 @@ Rules:
         context = _build_context(state)
         conversational_history = _get(state, "conversational_history") or []
 
-        prompt = f"""{_FIREWALL_PREAMBLE}
-The user is asking for clarification on a previous topic.
+        prompt = f"""The user is asking for clarification on a previous topic.
 Provide additional detail and explanation.
 
 Previous context:
@@ -454,6 +455,7 @@ Guidelines:
             prompt,
             max_tokens=config.SYNTHESIS_MAX_TOKENS_CLARIFICATION,
             stage_tag="synthesize_clarification",
+            system_prompt=_FIREWALL_PREAMBLE,
         )
         return self._ensure_citations(response.text, state)
 
@@ -466,8 +468,7 @@ Guidelines:
         original_question = self._get_question(state)
         context = _build_context(state)
 
-        prompt = f"""{_FIREWALL_PREAMBLE}
-Provide clear, actionable step-by-step guidance.
+        prompt = f"""Provide clear, actionable step-by-step guidance.
 
 Task: {original_question}
 
@@ -496,6 +497,7 @@ Rules:
             prompt,
             max_tokens=config.SYNTHESIS_MAX_TOKENS_PROCEDURAL,
             stage_tag="synthesize_procedural",
+            system_prompt=_FIREWALL_PREAMBLE,
         )
         return self._ensure_citations(response.text, state)
 

@@ -430,7 +430,13 @@ class TestGetHelper:
 
 
 class TestPromptInjectionFirewall:
-    """Verify XML wrapping and firewall preamble are applied correctly."""
+    """Verify XML wrapping and firewall preamble routing.
+
+    After the system-role separation refactor:
+    - _FIREWALL_PREAMBLE travels as system_prompt= kwarg (not in the prompt body).
+    - <retrieved_context> XML wrapping still appears in the user-turn prompt.
+    - chitchat / meta carry no system_prompt.
+    """
 
     # --- _build_context XML wrapping ---
 
@@ -467,7 +473,7 @@ class TestPromptInjectionFirewall:
         pre_tag = result.split("<retrieved_context>")[0]
         assert injection not in pre_tag
 
-    # --- Firewall preamble in synthesis prompts ---
+    # --- Firewall preamble routing: must be system_prompt, NOT in prompt body ---
 
     RETRIEVAL_CATEGORIES = [
         "factual",
@@ -480,18 +486,10 @@ class TestPromptInjectionFirewall:
 
     @pytest.mark.parametrize("category", RETRIEVAL_CATEGORIES)
     @pytest.mark.asyncio
-    async def test_firewall_preamble_in_prompt(self, category):
-        """Every retrieval-dependent category sends the firewall preamble to the LLM."""
-        captured_prompts: list[str] = []
-
-        async def capturing_complete(prompt: str, **kwargs):
-            captured_prompts.append(prompt)
-            resp = MagicMock()
-            resp.text = "Answer [S1]"
-            return resp
-
-        llm = MagicMock()
-        llm.complete = capturing_complete
+    async def test_firewall_preamble_sent_as_system_prompt(self, category):
+        """Every retrieval-dependent category passes _FIREWALL_PREAMBLE as the
+        system_prompt kwarg — not prepended to the user-turn prompt string."""
+        llm = _mock_llm("Answer [S1]")
         synth = SynthesizerAgent(llm_client=llm)
 
         chunks = [
@@ -502,53 +500,76 @@ class TestPromptInjectionFirewall:
 
         await synth.synthesize(state)
 
-        assert len(captured_prompts) == 1, "LLM should be called exactly once"
-        prompt_sent = captured_prompts[0]
-        assert _FIREWALL_PREAMBLE in prompt_sent, (
-            f"Firewall preamble missing from '{category}' prompt"
+        llm.complete.assert_called_once()
+        call_kwargs = llm.complete.call_args[1]  # keyword arguments
+        assert call_kwargs.get("system_prompt") == _FIREWALL_PREAMBLE, (
+            f"Firewall preamble missing from system_prompt kwarg in '{category}' call"
         )
-        assert "<retrieved_context>" in prompt_sent, (
-            f"XML context tag missing from '{category}' prompt"
+
+    @pytest.mark.parametrize("category", RETRIEVAL_CATEGORIES)
+    @pytest.mark.asyncio
+    async def test_firewall_preamble_not_in_prompt_body(self, category):
+        """The firewall preamble must NOT appear in the user-turn prompt string
+        (it travels exclusively through the system_prompt kwarg)."""
+        llm = _mock_llm("Answer [S1]")
+        synth = SynthesizerAgent(llm_client=llm)
+
+        chunks = [
+            _make_chunk(section="S1"),
+            _make_chunk(section="S2"),
+        ]
+        state = _make_state(chunks=chunks, question_category=category)
+
+        await synth.synthesize(state)
+
+        call_args = llm.complete.call_args
+        # First positional arg is the prompt string
+        prompt_body = call_args[0][0] if call_args[0] else call_args[1].get("prompt", "")
+        assert _FIREWALL_PREAMBLE not in prompt_body, (
+            f"Firewall preamble leaked into user-turn prompt for '{category}'"
+        )
+
+    @pytest.mark.parametrize("category", RETRIEVAL_CATEGORIES)
+    @pytest.mark.asyncio
+    async def test_xml_context_tags_in_prompt_body(self, category):
+        """The user-turn prompt body must still contain <retrieved_context> tags."""
+        llm = _mock_llm("Answer [S1]")
+        synth = SynthesizerAgent(llm_client=llm)
+
+        chunks = [
+            _make_chunk(section="S1"),
+            _make_chunk(section="S2"),
+        ]
+        state = _make_state(chunks=chunks, question_category=category)
+
+        await synth.synthesize(state)
+
+        call_args = llm.complete.call_args
+        prompt_body = call_args[0][0] if call_args[0] else call_args[1].get("prompt", "")
+        assert "<retrieved_context>" in prompt_body, (
+            f"XML context tags missing from user-turn prompt for '{category}'"
         )
 
     @pytest.mark.asyncio
-    async def test_chitchat_has_no_firewall_preamble(self):
-        """Chitchat does not embed retrieved context, so no preamble is needed."""
-        captured_prompts: list[str] = []
-
-        async def capturing_complete(prompt: str, **kwargs):
-            captured_prompts.append(prompt)
-            resp = MagicMock()
-            resp.text = "Hey!"
-            return resp
-
-        llm = MagicMock()
-        llm.complete = capturing_complete
+    async def test_chitchat_has_no_system_prompt(self):
+        """Chitchat does not embed retrieved context, so no system_prompt is passed."""
+        llm = _mock_llm("Hey!")
         synth = SynthesizerAgent(llm_client=llm)
         state = _make_state(chunks=[], question_category="chitchat")
 
         await synth.synthesize(state)
 
-        assert _FIREWALL_PREAMBLE not in captured_prompts[0]
-        assert "<retrieved_context>" not in captured_prompts[0]
+        call_kwargs = llm.complete.call_args[1]
+        assert call_kwargs.get("system_prompt") is None
 
     @pytest.mark.asyncio
-    async def test_meta_has_no_firewall_preamble(self):
-        """Meta does not embed retrieved context, so no preamble is needed."""
-        captured_prompts: list[str] = []
-
-        async def capturing_complete(prompt: str, **kwargs):
-            captured_prompts.append(prompt)
-            resp = MagicMock()
-            resp.text = "I can help."
-            return resp
-
-        llm = MagicMock()
-        llm.complete = capturing_complete
+    async def test_meta_has_no_system_prompt(self):
+        """Meta does not embed retrieved context, so no system_prompt is passed."""
+        llm = _mock_llm("I can help.")
         synth = SynthesizerAgent(llm_client=llm)
         state = _make_state(chunks=[], question_category="meta")
 
         await synth.synthesize(state)
 
-        assert _FIREWALL_PREAMBLE not in captured_prompts[0]
-        assert "<retrieved_context>" not in captured_prompts[0]
+        call_kwargs = llm.complete.call_args[1]
+        assert call_kwargs.get("system_prompt") is None
