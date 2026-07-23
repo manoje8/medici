@@ -19,6 +19,7 @@ from src.ingestion.chunking.chunker_factory import create_chunker
 from src.ingestion.chunking.chunking_config import ChunkingConfig
 from src.ingestion.chunking.fixed_window import FixedWindow
 from src.ingestion.chunking.recursive_character import RecursiveCharacterChunker
+from src.ingestion.chunking.sentence_boundary import SentenceBoundaryChunker
 
 
 @pytest.fixture
@@ -361,3 +362,77 @@ class TestBuildParentChildChunk:
         chunks = make_chunks(n)
         result = build_parent_child_chunk(chunks, tokenizer, parent_window=4)
         assert result[-1].parent_window_end == n
+
+
+class TestSentenceBoundaryChunker:
+    DOC_ID = "doc-sent"
+    SOURCE = "article.txt"
+
+    def test_returns_list(self):
+        chunker = SentenceBoundaryChunker(size=100)
+        result = chunker.chunk(
+            "First sentence. Second sentence.", doc_id=self.DOC_ID, source_file=self.SOURCE
+        )
+        assert isinstance(result, list)
+
+    def test_empty_input_returns_no_chunks(self):
+        chunker = SentenceBoundaryChunker()
+        assert chunker.chunk("", doc_id=self.DOC_ID, source_file=self.SOURCE) == []
+        assert chunker.chunk("   ", doc_id=self.DOC_ID, source_file=self.SOURCE) == []
+
+    def test_single_sentence_fits_in_one_chunk(self):
+        chunker = SentenceBoundaryChunker(size=100, size_mode="characters")
+        chunks = chunker.chunk(
+            "This is a single sentence.", doc_id=self.DOC_ID, source_file=self.SOURCE
+        )
+        assert len(chunks) == 1
+        assert chunks[0].text == "This is a single sentence."
+
+    def test_multiple_sentences_batched_correctly(self):
+        # 10 chars each approx
+        chunker = SentenceBoundaryChunker(size=25, overlap=0, size_mode="characters")
+        text = "Sentence A. Sentence B. Sentence C."
+        chunks = chunker.chunk(text, doc_id=self.DOC_ID, source_file=self.SOURCE)
+        # S_A + S_B = 23 chars. S_C = 11 chars.
+        assert len(chunks) == 2
+        assert chunks[0].text == "Sentence A. Sentence B."
+        assert chunks[1].text == "Sentence C."
+
+    def test_sentence_level_overlap_carries_forward(self):
+        chunker = SentenceBoundaryChunker(size=25, overlap=1, size_mode="characters")
+        text = "Sentence A. Sentence B. Sentence C."
+        chunks = chunker.chunk(text, doc_id=self.DOC_ID, source_file=self.SOURCE)
+        assert len(chunks) == 2
+        assert chunks[0].text == "Sentence A. Sentence B."
+        # Overlap of 1 sentence means "Sentence B." should be carried over
+        assert chunks[1].text == "Sentence B. Sentence C."
+
+    def test_oversized_sentence_falls_back_to_recursive(self):
+        chunker = SentenceBoundaryChunker(size=10, overlap=1, size_mode="characters")
+        text = "A very very long sentence that exceeds the limit. Short."
+        chunks = chunker.chunk(text, doc_id=self.DOC_ID, source_file=self.SOURCE)
+        # The first sentence is 49 chars, limit is 10.
+        # Fallback split will break it up.
+        # Check that buffer resets and doesn't overlap the oversized sentence.
+        assert len(chunks) > 2
+        assert chunks[-1].text == "Short."
+        # The second to last chunk shouldn't be the entire first sentence overlapping
+        assert len(chunks[-2].text) <= 10
+
+    def test_abbreviations_not_split(self):
+        chunker = SentenceBoundaryChunker(size=100, size_mode="characters")
+        text = "Dr. Smith went to Washington D.C. Mr. Jones stayed."
+        sentences = chunker._split_sentences(text)
+        assert len(sentences) == 2
+        assert sentences[0] == "Dr. Smith went to Washington D.C."
+        assert sentences[1] == "Mr. Jones stayed."
+
+    def test_factory_creates_sentence_boundary_chunker(self):
+        config = ChunkingConfig(
+            type=ChunkerStrategy.SENTENCE_BOUNDARY, size=200, overlap=2, size_mode="tokens"
+        )
+        chunker = create_chunker(config)
+        assert isinstance(chunker, SentenceBoundaryChunker)
+        assert chunker.size == 200
+        assert chunker.overlap == 2
+        assert chunker.size_mode == "tokens"

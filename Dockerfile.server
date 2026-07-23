@@ -1,5 +1,5 @@
-# Build:  docker build -f Dockerfile.server -t studious-server .
-# Run:    docker run -p 8000:8000 --env-file .env studious-server
+# Build:  docker build -f Dockerfile.server -t medici-server .
+# Run:    docker run -p 8000:8000 --env-file .env medici-server
 
 
 FROM python:3.12-slim AS base

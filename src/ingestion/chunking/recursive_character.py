@@ -15,11 +15,13 @@ from src.ingestion.chunking.Chunker import Chunker
 
 
 class RecursiveCharacterChunker(Chunker):
+    # Splits on separators (\n\n, \n, ., space) in priority order.
+    # Does NOT parse Markdown headers or PDF section structure.
     """
     For articles, books, reports
     """
 
-    def __init__(self, size: int = 1200, overlap: int = 100, tokenizer: Tokenizer = None):
+    def __init__(self, size: int = 1200, overlap: int = 100, tokenizer: Tokenizer = None, **kwargs):
         self.size = size
         self.overlap = overlap
         self.tokenizer = tokenizer or TikTokenTokenizer(model_name="gpt-4o-mini")

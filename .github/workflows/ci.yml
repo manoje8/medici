@@ -81,7 +81,7 @@ jobs:
       - name: Create minimal .env for CI
         run: |
           cat > .env <<'EOF'
-          PROJECT_NAME=studious-ci
+          PROJECT_NAME=medici-ci
           PORT=8000
           HOST=localhost
           CORS_ORIGINS=*
@@ -147,7 +147,7 @@ jobs:
       - name: Create minimal .env for CI
         run: |
           cat > .env <<'EOF'
-          PROJECT_NAME=studious-ci
+          PROJECT_NAME=medici-ci
           PORT=8000
           HOST=localhost
           CORS_ORIGINS=*
@@ -222,7 +222,7 @@ jobs:
 #      - name: Create eval .env
 #        run: |
 #          cat > .env <<'EOF'
-#          PROJECT_NAME=studious-eval
+#          PROJECT_NAME=medici-eval
 #          PORT=8000
 #          HOST=localhost
 #          CORS_ORIGINS=*
@@ -252,7 +252,7 @@ jobs:
 #          LOGFIRE_TOKEN: ${{ secrets.LOGFIRE_TOKEN }}
 #          LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
 #          LANGSMITH_TRACING: "true"
-#          LANGSMITH_PROJECT: "studious-eval"
+#          LANGSMITH_PROJECT: "medici-eval"
 #        run: |
 #          python tests/eval/eval_runner.py \
 #            --exit-code \

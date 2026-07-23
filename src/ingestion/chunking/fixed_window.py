@@ -14,11 +14,14 @@ from src.ingestion.chunking.Chunker import Chunker
 
 
 class FixedWindow(Chunker):
+    # Splits on raw word/character boundaries. Does NOT respect sentence,
+    # Markdown-header, or PDF-section structure.
     def __init__(
         self,
         size: int = 512,
         overlap: int = 64,
         token_len_fn: Callable[[str], int] | None = None,
+        **kwargs,
     ) -> None:
         if overlap >= size:
             raise ValueError("Overlap tokens must be smaller than the chunk size tokens")

@@ -107,7 +107,7 @@ class Processor:
         suffix = file_path.suffix.lower()
 
         if suffix in HTML_FORMATS | TEXT_FORMATS:
-            return ChunkerStrategy.RECURSIVE_CHARACTER
+            return ChunkerStrategy.SENTENCE_BOUNDARY
         elif suffix in OFFICE_FORMATS or suffix == ".pdf":
             return ChunkerStrategy.RECURSIVE_CHARACTER
         else:
@@ -246,6 +246,8 @@ class Processor:
 
         chunker = create_chunker(chunking_config)
         text_chunks = chunker.chunk(content_list)
+
+        print(text_chunks)
 
         if multimodal_items:
             multimodal_chunks = chunker.chunk_multimodal_items(

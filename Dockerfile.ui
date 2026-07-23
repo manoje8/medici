@@ -1,5 +1,5 @@
-# Build:  docker build -f Dockerfile.ui -t studious-ui .
-# Run:    docker run -p 8501:8501 -e BACKEND_URL=http://0.0.0.0:8000 studious-ui
+# Build:  docker build -f Dockerfile.ui -t medici-ui .
+# Run:    docker run -p 8501:8501 -e BACKEND_URL=http://0.0.0.0:8000 medici-ui
 
 FROM python:3.12-slim AS base
 

@@ -1,4 +1,4 @@
-# Studious — Agentic RAG Pipeline
+# Medici — Agentic RAG Pipeline
 
 > A production-grade Retrieval-Augmented Generation system orchestrated by a LangGraph state machine. Supports multi-turn memory, hybrid search, self-correcting retrieval loops, and multi-format document ingestion.
 
@@ -6,7 +6,7 @@
 
 ## What It Does
 
-**Studious** routes every user query through a chain of specialised LLM agents:
+**Medici** routes every user query through a chain of specialised LLM agents:
 
 1. **QueryRewriter** — resolves coreferences from Redis session history before routing.
 2. **RouterAgent** — classifies the query into one of 8 categories: `factual`, `comparative`, `analytical`, `summarization`, `procedural`, `clarification`, `chitchat`, `meta`.
@@ -91,7 +91,7 @@ QdrantStorageService.upsert_embedded_chunks()
 ### Local install
 
 ```bash
-git clone https://github.com/manoje8/studious.git
+git clone https://github.com/manoje8/medici.git
 cd advanced_rag
 
 python -m venv .venv
@@ -150,7 +150,7 @@ GCP_DOC_AI_LOCATION=us
 GCP_DOC_AI_PROCESSOR_ID=
 
 # Databases
-POSTGRES_CONN_STRING=postgresql://postgres:postgres@postgres:5432/studious
+POSTGRES_CONN_STRING=postgresql://postgres:postgres@postgres:5432/medici
 REDIS_URL=redis://localhost:6379
 
 # Pipeline limits

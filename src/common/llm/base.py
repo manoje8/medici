@@ -202,7 +202,7 @@ class BaseLLM(ABC):
         )
         response.metadata.update(
             {
-                "call_time": datetime.utcnow().isoformat(),
+                "call_time": datetime.now(UTC).isoformat(),
                 "retry_count": context.retry_count,
                 "call_id": self._call_count + 1,
                 "estimate_cost": context.estimate_cost(self.model_name),

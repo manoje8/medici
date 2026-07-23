@@ -22,11 +22,11 @@ class AppConfig:
         default_factory=lambda: os.getenv("BACKEND_URL", "http://localhost:8000")
     )
     logfire_token: str | None = field(default_factory=lambda: os.getenv("LOGFIRE_TOKEN"))
-    project_name: str = "Studious"
+    project_name: str = "Medici"
 
     ai_avatar: str = "🤖"
     user_avatar: str = "👤"
-    page_title: str = "Studious - Agentic Assistant"
+    page_title: str = "Medici - Agentic Assistant"
     layout: str = "wide"
     sidebar_state: str = "expanded"
 
@@ -416,7 +416,7 @@ class ChatRenderer:
         """Render welcome message for new sessions."""
         with st.chat_message("assistant", avatar=self.config.ai_avatar):
             st.markdown("""
-            👋 Welcome to **Studious Agentic Assistant**!
+            👋 Welcome to **Medici Agentic Assistant**!
 
             I can help you with:
             - 📄 **Document Analysis**: Upload documents and ask questions about them
@@ -544,7 +544,7 @@ class ChatRenderer:
         placeholder.markdown(text)
 
 
-class StudiousApp:
+class MediciApp:
     """Main application class orchestrating all components."""
 
     def __init__(self):
@@ -599,7 +599,7 @@ class StudiousApp:
 def main():
     """Application entry point."""
     try:
-        app = StudiousApp()
+        app = MediciApp()
         app.run()
     except Exception as e:
         st.error(f"Application Error: {str(e)}")

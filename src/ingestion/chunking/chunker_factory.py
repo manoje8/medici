@@ -1,5 +1,7 @@
 from collections.abc import Callable
 
+import logfire
+
 from src.common.utils.constants import ChunkerStrategy
 from src.common.utils.factory import Factory, ServiceScope
 from src.ingestion.chunking.Chunker import Chunker
@@ -24,7 +26,7 @@ def register_chunker(
 def create_chunker(config: ChunkingConfig):
     config_model = config.model_dump(exclude={"type"})
 
-    print("CONFIG MODEL: ", config_model)
+    logfire.debug("CONFIG MODEL: {config_model=}", config_model=config_model)
 
     chunker_strategy = config.type
 
@@ -40,6 +42,12 @@ def create_chunker(config: ChunkingConfig):
                 )
 
                 register_chunker(ChunkerStrategy.RECURSIVE_CHARACTER, RecursiveCharacterChunker)
+            case ChunkerStrategy.SENTENCE_BOUNDARY:
+                from src.ingestion.chunking.sentence_boundary import (
+                    SentenceBoundaryChunker,
+                )
+
+                register_chunker(ChunkerStrategy.SENTENCE_BOUNDARY, SentenceBoundaryChunker)
             case _:
                 msg = f"ChunkingConfig.strategy '{chunker_strategy}' is not registered in the ChunkerFactory. Registered types: {', '.join(chunker_factory.keys())}."
                 raise ValueError(msg)

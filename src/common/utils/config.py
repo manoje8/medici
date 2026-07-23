@@ -7,7 +7,7 @@ load_dotenv()
 
 
 class Config:
-    PROJECT_NAME: str = os.getenv("PROJECT_NAME", "studious")
+    PROJECT_NAME: str = os.getenv("PROJECT_NAME", "Medici")
     PORT: int = int(os.getenv("PORT", 8000))
     HOST: str = os.getenv("HOST", "localhost")
     CORS_ORIGINS = os.getenv("CORS_ORIGINS")
@@ -47,10 +47,10 @@ class Config:
     MAX_PAGE_PER_PARSE: int = int(os.getenv("MAX_PAGE_PER_PARSE", 20))
 
     EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME")
-    EMBEDDING_DIMENSIONS: int = int(os.getenv("EMBEDDING_DIMENSIONS", 1356))
+    EMBEDDING_DIMENSIONS: int = int(os.getenv("EMBEDDING_DIMENSIONS", 768))
     EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", 100))
 
-    VECTOR_SIZE = int(os.getenv("VECTOR_SIZE", 1356))
+    VECTOR_SIZE = int(os.getenv("VECTOR_SIZE", 768))
     MAX_RETRIEVAL_ROUND = int(os.getenv("MAX_RETRIEVAL_ROUND", 1))
     MAX_HOPS = int(os.getenv("MAX_HOPS", 4))
     MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", 100_000))
