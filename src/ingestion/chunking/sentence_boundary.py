@@ -20,9 +20,7 @@ from src.ingestion.chunking.chunk import (
 )
 from src.ingestion.chunking.Chunker import Chunker
 
-# ---------------------------------------------------------------------------
 # Abbreviations whose trailing period must NOT be treated as a sentence end.
-# ---------------------------------------------------------------------------
 _ABBREV: frozenset[str] = frozenset(
     {
         "Mr",
@@ -117,10 +115,7 @@ class SentenceBoundaryChunker(Chunker):
         self.size_mode = size_mode
         self.tokenizer: Tokenizer = tokenizer or TikTokenTokenizer(model_name="gpt-4o-mini")
 
-    # ------------------------------------------------------------------
     # Public interface (Chunker ABC)
-    # ------------------------------------------------------------------
-
     def chunk(self, text: str, **kwargs) -> list[Chunk]:
         """Split *text* into sentence-boundary chunks."""
         doc_id: str = kwargs.get("doc_id", "")
@@ -174,7 +169,7 @@ class SentenceBoundaryChunker(Chunker):
         source_file: str,
         start_index: int = 0,
         storage: "BaseStorage | None" = None,
-    ) -> tuple[list[Chunk], list[dict[str, Any]]]:
+    ) -> list[Chunk]:
         """Chunk a list of multimodal content-list items."""
         results: list[Chunk] = []
         pending_images: list[dict[str, Any]] = []
@@ -270,11 +265,7 @@ class SentenceBoundaryChunker(Chunker):
             f"Multimodal chunking complete: {idx - start_index} chunks, "
             f"{len(pending_images)} images flagged for captioning"
         )
-        return results, pending_images
-
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
+        return results
 
     def _measure(self, text: str) -> int:
         """Return the size of *text* in the configured unit."""
@@ -350,17 +341,16 @@ class SentenceBoundaryChunker(Chunker):
         for sentence in sentences:
             s_size = self._measure(sentence)
 
-            # ── Oversized single sentence ──────────────────────────────
+            # Oversized single sentence
             if s_size > self.size:
                 _flush(buffer)
                 for piece in self._fallback_split(sentence):
                     chunks.append(piece.strip())
-                # BUG-FIX: reset buffer to empty, do NOT seed with oversized sentence
                 buffer = []
                 buffer_size = 0
                 continue
 
-            # ── Adding this sentence would overflow the current chunk ──
+            # Adding this sentence would overflow the current chunk
             if buffer and buffer_size + s_size > self.size:
                 _flush(buffer)
                 overlap_sents = buffer[-self.overlap :] if self.overlap > 0 else []

@@ -30,6 +30,7 @@ from src.api.routers.document_routes import create_document_routes
 from src.api.routers.query_router import create_query_routes
 from src.common.cache.embedding_cache import EmbeddingCache
 from src.common.cache.semantic_cache import SemanticQueryCache
+from src.common.llm.fallback import FallbackClient
 from src.common.llm.gemini import GeminiClient
 from src.common.llm.groq import GroqClient
 from src.common.services.hybrid_search import HybridSearch
@@ -64,6 +65,9 @@ async def lifespan(app: FastAPI):
         gemini_client = GeminiClient(timeout_seconds=30, max_retries=2, model=config.GEMINI_MODEL)
         groq_client = GroqClient(timeout_seconds=30, max_retries=2)
 
+        primary_groq_fallback_gemini = FallbackClient(primary=groq_client, fallback=gemini_client)
+        primary_gemini_fallback_groq = FallbackClient(primary=gemini_client, fallback=groq_client)
+
         # episodic = EpisodicMemoryManager(llm_client=llm_client, pool=pool)
         # await episodic.setup()
         short_term = ShortTermMemoryManager(config.REDIS_URL)
@@ -97,9 +101,9 @@ async def lifespan(app: FastAPI):
             storage_service=storage_service, embedding_service=embedding_service
         )
         reranker = Reranker()
-        query_expander = QueryExpander(gemini_client)
+        query_expander = QueryExpander(primary_gemini_fallback_groq)
         retrieval_agent = RetrievalAgent(
-            llm_client=groq_client,
+            llm_client=primary_groq_fallback_gemini,
             hybrid_search=hybrid_search,
             reranker=reranker,
             query_expand=query_expander,
@@ -108,12 +112,12 @@ async def lifespan(app: FastAPI):
         graph = await compile_graph_with_postgres(
             pool=pool,
             short_term=short_term,
-            rewriter=QueryRewriter(gemini_client),
-            router=RouterAgent(groq_client),
-            planner=PlannerAgent(gemini_client),
+            rewriter=QueryRewriter(primary_gemini_fallback_groq),
+            router=RouterAgent(primary_groq_fallback_gemini),
+            planner=PlannerAgent(primary_gemini_fallback_groq),
             retrieval_agent=retrieval_agent,
-            grader=GraderAgent(groq_client),
-            synthesizer=SynthesizerAgent(groq_client),
+            grader=GraderAgent(primary_groq_fallback_gemini),
+            synthesizer=SynthesizerAgent(primary_groq_fallback_gemini),
         )
 
         semantic_cache: SemanticQueryCache | None = None
