@@ -1,6 +1,7 @@
 import logfire
 
 from src.agents.graph.state import State
+from src.agents.retrieval import HIGH_CONFIDENCE_RRF_THRESHOLD
 
 _CHUNK_PREVIEW_MAX_CHARS = 300
 
@@ -78,6 +79,12 @@ async def retrieve(state: State, retrieval_agent) -> dict:
         round_no=state["retrieval_round"],
     )
 
+    is_factual = state.get("question_category", "factual").lower() == "factual"
+    top_score = (
+        round_result.chunk_retrieved[0].get("score", 0.0) if round_result.chunk_retrieved else 0.0
+    )
+    skip_grading = is_factual and top_score > HIGH_CONFIDENCE_RRF_THRESHOLD
+
     return {
         "retrieval_history": state["retrieval_history"]
         + [
@@ -91,6 +98,7 @@ async def retrieve(state: State, retrieval_agent) -> dict:
         ],
         "retrieval_round": state["retrieval_round"] + 1,
         "total_retrieval_steps": state.get("total_retrieval_steps", 0) + 1,
+        "skip_grading": skip_grading,
     }
 
 
@@ -122,6 +130,13 @@ async def hop_check(state: State, planner) -> dict:
         return {
             "accepted_chunks": accepted,
             "hop_decision": "exhausted",
+        }
+
+    if state.get("skip_grading"):
+        logfire.info("skipping_hop_check_due_to_high_confidence", current_hop=current_hop)
+        return {
+            "accepted_chunks": accepted,
+            "hop_decision": "sufficient",
         }
 
     context_preview = _build_structured_chunk_previews(accepted)

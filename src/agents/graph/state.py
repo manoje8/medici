@@ -38,3 +38,4 @@ class State(TypedDict):
     # grading / refinement loop
     needs_refinement: bool
     refinement_loops: int
+    skip_grading: bool

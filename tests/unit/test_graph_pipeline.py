@@ -98,7 +98,7 @@ class TestSessionHandling:
     async def test_append_turn_called_after_graph_run(self, pipeline, mock_short_term):
         mock_short_term.get_session.return_value = _make_session()
         await pipeline.chat("hello", session_id="s1", user_id="u1")
-        mock_short_term.append_turn.assert_called_once()
+        assert mock_short_term.append_turn.call_count == 2
 
 
 class TestResponseStructure:

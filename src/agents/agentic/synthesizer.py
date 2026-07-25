@@ -208,7 +208,7 @@ Context:
 
 Instructions:
 1. Only use information explicitly stated in the provided context (inside the <retrieved_context> tags)
-2. Cite every factual claim with the source section in brackets [Section Name]
+2. Cite every factual claim using the format [Source: ... | Section: ...]
 3. If the context is insufficient, clearly state what's missing
 4. Be direct and concise - avoid unnecessary elaboration
 5. If multiple sources conflict, acknowledge the discrepancy
@@ -316,7 +316,7 @@ Structure your response as:
 5. Recommendation or Conclusion (if appropriate)
 
 Rules:
-- Cite all claims with [Section Name] (only from inside the <retrieved_context> tags)
+- Cite all claims using the format [Source: ... | Section: ...] (only from inside the <retrieved_context> tags)
 - Be objective and balanced
 - Acknowledge when data is incomplete
 - Use specific metrics/numbers when available
@@ -362,7 +362,7 @@ Structure your analysis:
    - Note any assumptions made
 
 Rules:
-- Cite evidence with [Section Name] (only from inside the <retrieved_context> tags)
+- Cite evidence using the format [Source: ... | Section: ...] (only from inside the <retrieved_context> tags)
 - Distinguish between facts and inferences
 - Acknowledge uncertainty
 - Be thorough but avoid speculation beyond evidence
@@ -407,7 +407,7 @@ Structure:
 
 Rules:
 - Preserve key facts, numbers, and dates
-- Cite sources with [Section Name] (only from inside the <retrieved_context> tags)
+- Cite sources using the format [Source: ... | Section: ...] (only from inside the <retrieved_context> tags)
 - Maintain original meaning - don't introduce new information
 - Be hierarchical: most important information first
 - Note any gaps in the source material
@@ -487,7 +487,7 @@ Structure:
 
 Rules:
 - Be precise and unambiguous
-- Cite sources for each major step [Section Name] (only from inside the <retrieved_context> tags)
+- Cite sources for each major step using the format [Source: ... | Section: ...] (only from inside the <retrieved_context> tags)
 - Indicate if steps are sequential or can be done in parallel
 - Include safety/security considerations if applicable
 - If the procedure is incomplete in the context, note what's missing

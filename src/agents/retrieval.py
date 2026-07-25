@@ -134,7 +134,8 @@ Use "exhausted" if the information is likely not in this document.
             )
 
         top_score = results[0].get("score", 0.0)
-        if top_score > HIGH_CONFIDENCE_RRF_THRESHOLD:
+        is_factual = state.get("question_category", "factual").lower() == "factual"
+        if is_factual and top_score > HIGH_CONFIDENCE_RRF_THRESHOLD:
             logfire.info(
                 "high_confidence_retrieval_skipping_evaluator",
                 top_score=top_score,

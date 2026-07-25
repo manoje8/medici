@@ -426,6 +426,14 @@ class TestHopCheckNode:
         result = await hop_check(state, planner=mock_planner_sufficient)
         assert isinstance(result["accepted_chunks"], list)
 
+    @pytest.mark.asyncio
+    async def test_skip_grading_bypasses_planner(self, mock_planner_new_sub_q):
+        history = [{"query": "q", "decision": "sufficient", "reasoning": "", "chunks": []}]
+        state = _base_state(retrieval_history=history, current_hop=0, max_hops=4, skip_grading=True)
+        result = await hop_check(state, planner=mock_planner_new_sub_q)
+        assert result["hop_decision"] == "sufficient"
+        mock_planner_new_sub_q.plan_next_hop.assert_not_awaited()
+
 
 # Node: grade
 
@@ -618,6 +626,10 @@ class TestRouteAfterHopCheck:
     def test_within_budget_allows_retrieve(self):
         state = _base_state(hop_decision="retrieve_again", total_retrieval_steps=3)
         assert route_after_hop_check(state) == "retrieve"
+
+    def test_skip_grading_routes_to_synthesize(self):
+        state = _base_state(hop_decision="sufficient", skip_grading=True)
+        assert route_after_hop_check(state) == "synthesize"
 
 
 # Edge: route_after_grade

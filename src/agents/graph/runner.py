@@ -25,6 +25,12 @@ class GraphPipeline:
         if not session:
             session = await self.short_term.create_session(user_id)
 
+        await self.short_term.append_turn(
+            session=session,
+            role="user",
+            content=user_message,
+        )
+
         for client in self._llm_clients:
             client.reset_usage()
 
@@ -59,12 +65,16 @@ class GraphPipeline:
 
         graph_config = {"configurable": {"thread_id": session.session_id}}
 
+        recent_turns = session.get_recent_turns(6)
+        history = [{"role": t.role, "content": t.content} for t in recent_turns]
+
         initial_state = {
             "session_id": session.session_id,
             "user_id": user_id,
             "original_message": user_message,
             "effective_query": user_message,
             "was_rewritten": False,
+            "conversational_history": history,
             "question_category": "",
             "hop_questions": [],
             "current_hop": 0,

@@ -73,6 +73,7 @@ def build_rag_graph(
         {
             "retrieve": "retrieve",
             "grade": "grade",
+            "synthesize": "synthesize",
         },
     )
 

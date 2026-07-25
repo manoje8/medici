@@ -81,7 +81,7 @@ class QdrantStorageService:
         upsert_batch_size: int = 100,
     ):
         self.client = AsyncQdrantClient(
-            url=url or config.QDRANT_CLUSTER_ENDPOINT, api_key=config.QDRANT_API_KEY
+            url=url or config.QDRANT_CLUSTER_ENDPOINT, api_key=config.QDRANT_API_KEY, timeout=30
         )
         self.collection_name = collection_name
         self.vector_size = vector_size

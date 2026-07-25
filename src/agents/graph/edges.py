@@ -64,6 +64,9 @@ def route_after_hop_check(state: State) -> str:
     if hop_decision == "retrieve_again":
         return "retrieve"
 
+    if state.get("skip_grading"):
+        return "synthesize"
+
     return "grade"
 
 
