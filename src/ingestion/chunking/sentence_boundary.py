@@ -84,7 +84,7 @@ class SentenceBoundaryChunker(Chunker):
     size_mode : {"tokens", "characters"}
         Unit used when measuring *size*.  ``"tokens"`` aligns with
         embedding-model context limits; ``"characters"`` is faster
-        because it avoids tokeniser calls.
+        because it avoids tokenizer calls.
     tokenizer : Tokenizer | None
         Used only when ``size_mode="tokens"``.  Falls back to
         ``TikTokenTokenizer`` when *None*.
@@ -94,7 +94,7 @@ class SentenceBoundaryChunker(Chunker):
     Abbreviation handling: a curated set of common abbreviations
     (``_ABBREV``) prevents false sentence boundaries after e.g.
     "Dr. Smith" or "Fig. 3".  For production-grade NLP accuracy, swap
-    ``_split_sentences`` for spaCy's sentencizer — the public interface
+    ``_split_sentences`` for spaCy's sensitizers — the public interface
     is unchanged.
     """
 
@@ -115,7 +115,6 @@ class SentenceBoundaryChunker(Chunker):
         self.size_mode = size_mode
         self.tokenizer: Tokenizer = tokenizer or TikTokenTokenizer(model_name="gpt-4o-mini")
 
-    # Public interface (Chunker ABC)
     def chunk(self, text: str, **kwargs) -> list[Chunk]:
         """Split *text* into sentence-boundary chunks."""
         doc_id: str = kwargs.get("doc_id", "")

@@ -65,3 +65,4 @@ pyyaml
 tenacity
 bcrypt
 pyjwt
+sentence-transformers

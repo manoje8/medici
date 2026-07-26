@@ -287,6 +287,13 @@ class Processor:
         for one-off parsing and, via process_document_batch, for batches.
         """
         file_path = Path(file_path)
+        file_size = file_path.stat().st_size
+        if file_size > config.MAX_UPLOAD_BYTES:
+            raise ValueError(
+                f"File too large: {file_size // 1024 // 1024} MB, "
+                f"maximum size is {config.MAX_UPLOAD_BYTES // 1024 // 1024} MB"
+            )
+
         logfire.info(f"Starting document parsing: {parse_method.value} - {file_path}")
 
         ext = file_path.suffix.lower()

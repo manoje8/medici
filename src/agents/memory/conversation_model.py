@@ -23,7 +23,7 @@ class ConversationSession:
     def get_recent_turns(self, n: int = 4):
         return self.turns[-n:]
 
-    def to_prompt_format(self, n: int = 6):
+    def to_prompt_format(self, n: int = 6) -> str:
         recent = self.get_recent_turns(n)
 
         lines = []

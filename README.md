@@ -163,7 +163,7 @@ SECRET_KEY=change-me-in-production
 
 # Caches
 SEMANTIC_CACHE_ENABLED=true
-SEMANTIC_CACHE_THRESHOLD=0.92
+SEMANTIC_CACHE_THRESHOLD=0.88
 
 # Observability (optional)
 LOGFIRE_TOKEN=

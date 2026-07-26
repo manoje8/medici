@@ -21,7 +21,9 @@ class RecursiveCharacterChunker(Chunker):
     For articles, books, reports
     """
 
-    def __init__(self, size: int = 1200, overlap: int = 100, tokenizer: Tokenizer = None, **kwargs):
+    def __init__(
+        self, size: int = 1200, overlap: int = 100, tokenizer: Tokenizer | None = None, **kwargs
+    ):
         self.size = size
         self.overlap = overlap
         self.tokenizer = tokenizer or TikTokenTokenizer(model_name="gpt-4o-mini")

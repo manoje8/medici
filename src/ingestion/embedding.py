@@ -21,7 +21,8 @@ def _is_token_limit_error(error: Exception) -> bool:
 
 
 def _estimate_tokens(text: str) -> int:
-    return max(1, len(text) // 3)
+    # TODO: Add Tiktoken to estimate token count
+    return max(1, len(text) // 4)
 
 
 @dataclass

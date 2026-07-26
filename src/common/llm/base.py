@@ -50,7 +50,6 @@ class LLMRequestContext:
         self.kwargs = kwargs
         self._cost_estimate = None
 
-    # TODO: model -> cost per token here
     def estimate_cost(self, model: str) -> float:
         approx_tokens = len(self.prompt.split()) / 0.75
         return approx_tokens * 0.000001

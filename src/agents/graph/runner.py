@@ -65,8 +65,7 @@ class GraphPipeline:
 
         graph_config = {"configurable": {"thread_id": session.session_id}}
 
-        recent_turns = session.get_recent_turns(6)
-        history = [{"role": t.role, "content": t.content} for t in recent_turns]
+        history = session.to_prompt_format()
 
         initial_state = {
             "session_id": session.session_id,

@@ -70,7 +70,7 @@ class Config:
 
     SEMANTIC_CACHE_ENABLED: bool = os.getenv("SEMANTIC_CACHE_ENABLED", "true").lower() == "true"
     SEMANTIC_CACHE_TTL_SECONDS: int = int(os.getenv("SEMANTIC_CACHE_TTL_SECONDS", 3600))
-    SEMANTIC_CACHE_THRESHOLD: float = float(os.getenv("SEMANTIC_CACHE_THRESHOLD", 0.92))
+    SEMANTIC_CACHE_THRESHOLD: float = float(os.getenv("SEMANTIC_CACHE_THRESHOLD", 0.88))
     SEMANTIC_CACHE_MAX_ENTRIES: int = int(os.getenv("SEMANTIC_CACHE_MAX_ENTRIES", 500))
 
     SYNTHESIS_MAX_TOKENS_FACTUAL: int = int(os.getenv("SYNTHESIS_MAX_TOKENS_FACTUAL", 1024))
@@ -88,7 +88,7 @@ class Config:
 
     # Docling
     TABLE_MODE = os.getenv("TABLE_MODE", "fast")
-    DO_TABLES: bool = os.getenv("DO_TABLES", "false").lower() == "true"
+    DO_TABLES: bool = os.getenv("DO_TABLES", "true").lower() == "true"
     DO_OCR: bool = os.getenv("DO_OCR", "false").lower() == "true"
 
     REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
@@ -100,6 +100,9 @@ class Config:
     CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", 512))
     CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", 64))
     FLASHRANK_CACHE_DIR: str = os.getenv("FLASHRANK_CACHE_DIR", "/flashrank")
+
+    MAX_UPLOAD_BYTES: int = os.getenv("MAX_UPLOAD_BYTES", 100_000_00)
+    MIN_RERANK_SCORE = 0.1
 
 
 config = Config()
