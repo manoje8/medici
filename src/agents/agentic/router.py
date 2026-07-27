@@ -273,7 +273,7 @@ Respond with EXACTLY this JSON format:
             result["fallback_categories"] = ["factual", "analytical"]
 
         if result["primary_category"] == "procedural":
-            logfire.info("Procedural query detected — upgrading retrieval depth/chunking")
+            logfire.info("Procedural query detected, upgrading retrieval depth/chunking")
             result["retrieval_strategy"]["chunking_strategy"] = "large"
             result["retrieval_strategy"]["max_retrieval_depth"] = 3
 

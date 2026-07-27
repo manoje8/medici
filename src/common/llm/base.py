@@ -34,7 +34,7 @@ _NON_RETRYABLE_LLM_EXCEPTIONS = (
     _gexc.PermissionDenied,  # 403 – quota exceeded or API key lacks access
     _gexc.Unauthenticated,  # 401 – invalid/missing API key
     _gexc.NotFound,  # 404 – model name does not exist
-    LLMParseError,  # deterministic parse failure — same output every time
+    LLMParseError,  # deterministic parse failure, same output every time
 )
 
 

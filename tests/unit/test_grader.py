@@ -10,12 +10,11 @@ Coverage:
   Helpers — _default_grade_result and _default_grade_result_fail_open shapes.
 """
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.agents.agentic.grader import _GRADE_CONCURRENCY, _GRADE_MAX_RETRIES, GraderAgent
+from src.agents.agentic.grader import _GRADE_MAX_RETRIES, GraderAgent
 from src.common.llm.base import LLMContentError
 
 
@@ -111,63 +110,6 @@ class TestEffectiveQueryFallback:
         # The actual message text ("What is RAG?") must appear, not the key name
         assert "What is RAG?" in prompt
         assert "original_message" not in prompt  # literal string must NOT appear
-
-
-class TestSemaphoreConcurrency:
-    """Fix A — at most _GRADE_CONCURRENCY LLM calls are in-flight simultaneously."""
-
-    @pytest.mark.asyncio
-    async def test_concurrent_calls_capped_at_grade_concurrency(self):
-        """Submit more chunks than _GRADE_CONCURRENCY and verify the high-water
-        mark of simultaneous calls never exceeds the limit."""
-        max_concurrent = 0
-        active = 0
-        call_lock = asyncio.Lock()
-
-        async def _counting_complete(prompt, **kwargs):
-            nonlocal max_concurrent, active
-            async with call_lock:
-                active += 1
-                max_concurrent = max(max_concurrent, active)
-            # Yield so other coroutines get a chance to start
-            await asyncio.sleep(0.01)
-            async with call_lock:
-                active -= 1
-            response = MagicMock()
-            response.parsed_json = {
-                "relevant": True,
-                "score": 0.8,
-                "reason": "ok",
-                "answers_sub_questions": [],
-                "information_type": "direct_answer",
-                "key_information": [],
-            }
-            return response
-
-        llm = MagicMock()
-        llm.complete = _counting_complete
-
-        grader = GraderAgent(llm)
-        # Submit GRADE_CONCURRENCY * 3 chunks — enough to trigger fan-out
-        chunks = [_make_chunk(text=f"chunk {i}") for i in range(_GRADE_CONCURRENCY * 3)]
-        await grader._grade_chunks_batch(chunks, "query", [])
-
-        assert max_concurrent <= _GRADE_CONCURRENCY, (
-            f"High-water concurrent calls was {max_concurrent}, expected ≤ {_GRADE_CONCURRENCY}"
-        )
-
-    @pytest.mark.asyncio
-    async def test_all_chunks_are_graded_despite_semaphore(self):
-        """The semaphore must not silently drop any chunk."""
-        llm = _make_llm()
-        grader = GraderAgent(llm)
-        n = _GRADE_CONCURRENCY * 2
-        chunks = [_make_chunk(text=f"chunk {i}") for i in range(n)]
-
-        accepted, _ = await grader._grade_chunks_batch(chunks, "query", [])
-
-        # All chunks should be accepted because our mock always returns relevant=True
-        assert len(accepted) == n
 
 
 class TestGradeSingleChunkRetry:

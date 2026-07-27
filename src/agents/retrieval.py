@@ -5,6 +5,7 @@ from src.agents.agentic.query_expander import QueryExpander
 from src.agents.graph.state import State
 from src.common.services.hybrid_search import HybridSearch
 from src.common.services.reranker import Reranker
+from src.common.utils.config import config
 
 HIGH_CONFIDENCE_RRF_THRESHOLD = 0.85
 
@@ -103,19 +104,35 @@ Use "exhausted" if the information is likely not in this document.
     async def retrieve_and_evaluate(
         self, query: str, original_question: str, state: State, round_no: int = 0
     ) -> RetrievalRound:
+
+        question_category = state.get("question_category", "factual").lower()
+        use_expansion = question_category not in config.SKIP_EXPANSION_CATEGORIES
+
         logfire.info(
             "retrieval_round_start",
             round_no=round_no,
             query=query,
+            question_category=question_category,
+            use_expansion=use_expansion,
             original_question=(
                 original_question[:100] + "..."
                 if len(original_question) > 100
                 else original_question
             ),
         )
+        if not use_expansion:
+            logfire.debug(
+                "query_expansion_skipped",
+                reason=f"category '{question_category}' is in SKIP_EXPANSION_CATEGORIES",
+                round_no=round_no,
+            )
 
         results = await self.retrieve(
-            query, original_question, state["doc_id_filter"], round_no=round_no
+            query,
+            original_question,
+            state["doc_id_filter"],
+            round_no=round_no,
+            use_expansion=use_expansion,
         )
 
         if not results:

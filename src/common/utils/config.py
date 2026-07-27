@@ -54,6 +54,12 @@ class Config:
     MAX_RETRIEVAL_ROUND = int(os.getenv("MAX_RETRIEVAL_ROUND", 1))
     MAX_HOPS = int(os.getenv("MAX_HOPS", 4))
     MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", 100_000))
+    USE_PARENT_CONTEXT: bool = os.getenv("USE_PARENT_CONTEXT", "true").lower() == "true"
+    SKIP_EXPANSION_CATEGORIES: frozenset[str] = frozenset(
+        c.strip().lower()
+        for c in os.getenv("SKIP_EXPANSION_CATEGORIES", "factual").split(",")
+        if c.strip()
+    )
 
     # Token-budget guard
     MODEL_CONTEXT_LIMIT: int = int(os.getenv("MODEL_CONTEXT_LIMIT", 128_000))

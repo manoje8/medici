@@ -92,10 +92,15 @@ def _build_context(state: AgentState | dict, max_chars: int | None = None) -> st
     current_tokens = 0
 
     for c in chunks:
+        body = (
+            (c.get("parent_text") or "").strip() or c.get("text", "")
+            if config.USE_PARENT_CONTEXT
+            else c.get("text", "")
+        )
         part = (
             f"[Source: {c.get('source', 'unknown')} | "
             f"Section: {c.get('section', 'unknown')}]\n"
-            f"{c.get('text', '')}"
+            f"{body}"
         )
         char_addition = (len(separator) + len(part)) if parts else len(part)
         part_tokens = tokenizer.count(part)

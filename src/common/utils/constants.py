@@ -67,3 +67,4 @@ class ChunkerStrategy(StrEnum):
     FIXED = "fixed"
     RECURSIVE_CHARACTER = "recursive_character"
     SENTENCE_BOUNDARY = "sentence_boundary"
+    SEMANTIC = "semantic"

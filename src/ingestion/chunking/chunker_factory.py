@@ -48,6 +48,10 @@ def create_chunker(config: ChunkingConfig):
                 )
 
                 register_chunker(ChunkerStrategy.SENTENCE_BOUNDARY, SentenceBoundaryChunker)
+            case ChunkerStrategy.SEMANTIC:
+                from src.ingestion.chunking.semantic import SemanticChunker
+
+                register_chunker(ChunkerStrategy.SEMANTIC, SemanticChunker)
             case _:
                 msg = f"ChunkingConfig.strategy '{chunker_strategy}' is not registered in the ChunkerFactory. Registered types: {', '.join(chunker_factory.keys())}."
                 raise ValueError(msg)

@@ -5,7 +5,6 @@ import logfire
 from src.agents.graph.state import State
 from src.common.llm.base import LLMContentError
 
-_GRADE_CONCURRENCY = 5
 _GRADE_MAX_RETRIES = 2
 
 
@@ -89,35 +88,120 @@ class GraderAgent:
 
     async def _grade_chunks_batch(self, chunks: list[dict], query: str, sub_questions: list[str]):
         """
-        Grade all chunks in parallel for efficiency, bounded by _GRADE_CONCURRENCY.
-        Returns accepted chunks and grading metadata.
+        Grade all chunks in a **single** LLM call instead of N parallel calls.
 
-        :param chunks:
-        :param query:
-        :param sub_questions:
+        The LLM receives every chunk numbered 0…N-1 in one prompt and returns a
+        JSON array of per-chunk verdicts.  This saves ``len(chunks) - 1`` LLM
+        round-trips per grading pass.
+
+        Fall-back behavior mirrors the old per-chunk logic:
+        - Malformed / missing array  → all items default to fail-closed.
+        - Individual item missing ``relevant`` key → fail-closed for that item.
+        - Transient LLM errors (with retries) → fail-open per item so a
+          temporary provider hiccup never silently discards good context.
         """
         if not chunks:
             return [], {"rejected_reasons": []}
 
-        sem = asyncio.Semaphore(_GRADE_CONCURRENCY)
+        sub_q_context = ""
+        if sub_questions:
+            sub_q_context = "\nRelevant sub-questions:\n" + "\n".join(
+                f"{i}: {q}" for i, q in enumerate(sub_questions[:5])
+            )
 
-        async def _bounded(chunk: dict):
-            async with sem:
-                return await self._grade_single_chunk(chunk, query, sub_questions)
+        chunk_blocks = "\n\n".join(
+            f"[Chunk {i} | {c.get('source', 'unknown')} | {c.get('section', 'unknown')}]\n"
+            f"{c.get('text', '')[:1000]}"
+            for i, c in enumerate(chunks)
+        )
 
-        results = await asyncio.gather(*[_bounded(c) for c in chunks])
+        prompt = f"""You are grading retrieved document chunks for relevance to a query.
+
+Main question: {query}{sub_q_context}
+
+Below are {len(chunks)} chunks, each prefixed with its index.
+
+{chunk_blocks}
+
+For EACH chunk evaluate whether it:
+1. Directly answers the main question or any sub-question
+2. Provides necessary context for understanding the answer
+3. Contains specific facts, numbers, or details relevant to the query
+
+Respond with a JSON array of exactly {len(chunks)} objects — one per chunk, in order:
+[
+  {{
+    "chunk_index": 0,
+    "relevant": true/false,
+    "score": 0.0-1.0,
+    "reason": "Brief explanation",
+    "answers_sub_questions": [<sub-question indices this chunk helps answer>],
+    "information_type": "direct_answer|supporting_context|background|irrelevant",
+    "key_information": ["key", "facts", "found"]
+  }},
+  ...
+]
+
+Return the JSON array only — no markdown fences, no extra text."""
+
+        for attempt in range(_GRADE_MAX_RETRIES + 1):
+            try:
+                response = await self.llm.complete(prompt, stage_tag="grader_batch")
+                raw = response.parsed_json
+
+                # LLM may return a dict wrapper instead of a bare array.
+                if isinstance(raw, dict):
+                    raw = raw.get("grades") or raw.get("results") or raw.get("chunks") or []
+
+                if not isinstance(raw, list):
+                    logfire.error("Batch grader: response is not a list — falling back to defaults")
+                    raw = []
+
+                grades: list[dict] = []
+                for i in range(len(chunks)):
+                    item = next(
+                        (g for g in raw if isinstance(g, dict) and g.get("chunk_index") == i),
+                        None,
+                    )
+                    if item is None and i < len(raw) and isinstance(raw[i], dict):
+                        item = raw[i]
+
+                    if item is None or "relevant" not in item:
+                        logfire.warn(
+                            f"Batch grader: missing/malformed grade for chunk {i} — fail-closed"
+                        )
+                        grades.append(self._default_grade_result())
+                    else:
+                        grades.append(item)
+
+                break
+
+            except LLMContentError as e:
+                logfire.error(f"Batch grader non-retryable error: {e}")
+                grades = [self._default_grade_result() for _ in chunks]
+                break
+
+            except Exception as e:
+                if attempt == _GRADE_MAX_RETRIES:
+                    logfire.warn(
+                        f"Batch grader failed after {_GRADE_MAX_RETRIES + 1} attempts "
+                        f"— keeping all chunks conservatively: {e}"
+                    )
+                    grades = [self._default_grade_result_fail_open() for _ in chunks]
+                    break
+                logfire.warn(f"Batch grader attempt {attempt + 1} failed, retrying: {e}")
+                await asyncio.sleep(2**attempt)
 
         accepted = []
         rejected_reasons = []
 
-        for chunk, result in zip(chunks, results, strict=False):
+        for chunk, result in zip(chunks, grades, strict=False):
             if result["relevant"]:
                 chunk_copy = dict(chunk)
                 chunk_copy["grade_reason"] = result["reason"]
                 chunk_copy["relevance_score"] = result.get("score", 0.5)
                 chunk_copy["answers_sub_questions"] = result.get("answers_sub_questions", [])
                 accepted.append(chunk_copy)
-
             else:
                 rejected_reasons.append(
                     {
@@ -131,30 +215,24 @@ class GraderAgent:
 
         logfire.info(
             f"Grader accepted: {len(accepted)}/{len(chunks)} chunks "
-            f"(rejected {len(rejected_reasons)})"
+            f"(rejected {len(rejected_reasons)}) — single batch call"
         )
 
         return accepted, {"rejected_reasons": rejected_reasons}
 
     async def _grade_single_chunk(self, chunk: dict, query: str, sub_questions: list[str]):
         """
-        Grade a single chunk for relevance to the query and sub-questions.
-        Returns detailed grading result.
+        Grade a single chunk in isolation.
 
-        :param chunk:
-        :param query:
-        :param sub_questions:
-        :return:
+        Kept as a private helper for the legacy :meth:`grade_chunks` public API.
+        The main grading path uses :meth:`_grade_chunks_batch` instead.
         """
-
         chunk_text = chunk.get("text", "")[:1000]
         source = chunk.get("source", "unknown")
         section = chunk.get("section", "unknown")
 
         sub_q_context = ""
-
         if sub_questions:
-            # Limit to 5
             sub_q_context = "\nRelevant sub-questions:\n" + "\n".join(
                 f"- {q}" for q in sub_questions[:5]
             )
@@ -189,13 +267,11 @@ Respond with JSON only:
                 grade = result.parsed_json
 
                 if "relevant" not in grade:
-                    # Malformed JSON response — deterministically broken, fail-closed.
                     return self._default_grade_result()
 
                 return grade
 
             except LLMContentError as e:
-                # Non-retryable (bad prompt, auth failure, etc.) — fail-closed.
                 logfire.error(f"Non-retryable grading error, rejecting chunk: {e}")
                 return self._default_grade_result()
 
