@@ -10,10 +10,12 @@ from qdrant_client.http.models import (
     Document,
     FieldCondition,
     Filter,
+    FilterSelector,
     Fusion,
     FusionQuery,
     MatchValue,
     Modifier,
+    PayloadSchemaType,
     PointStruct,
     Prefetch,
     SparseVectorParams,
@@ -110,6 +112,24 @@ class QdrantStorageService:
                 f"Either update vector_size to {actual} or recreate the collection."
             )
 
+    async def _ensure_doc_id_index(self) -> None:
+        """
+        Create a keyword payload index on 'doc_id' if it does not already exist.
+
+        Qdrant requires an index on any field used in a filter for delete
+        operations. This call is idempotent — creating an index that already
+        exists is a no-op on the server side.
+        """
+        await _with_retry(
+            partial(
+                self.client.create_payload_index,
+                collection_name=self.collection_name,
+                field_name="doc_id",
+                field_schema=PayloadSchemaType.KEYWORD,
+            )
+        )
+        logfire.info("Ensured keyword payload index on 'doc_id'")
+
     async def ensure_collection_exists(self) -> None:
         exists = await _with_retry(partial(self.client.collection_exists, self.collection_name))
 
@@ -129,6 +149,8 @@ class QdrantStorageService:
             await self.validate_vector_dimension()
             logfire.info(f"Collection already exists: {self.collection_name}")
 
+        await self._ensure_doc_id_index()
+
     async def upsert_embedded_chunks(self, embedded_chunks: list[EmbeddedChunk]) -> None:
         """Store embedded chunks in Qdrant in batches.
 
@@ -137,6 +159,15 @@ class QdrantStorageService:
         """
 
         await self.ensure_collection_exists()
+
+        resolved_doc_id = embedded_chunks[0].chunk.doc_id if embedded_chunks else None
+
+        if resolved_doc_id is not None:
+            await self._delete_doc_chunks(resolved_doc_id)
+        else:
+            logfire.warning(
+                "upsert_embedded_chunks called with no doc_id and no chunks; skipping stale-chunk cleanup"
+            )
 
         total = len(embedded_chunks)
         total_batches = (total + self.upsert_batch_size - 1) // self.upsert_batch_size
@@ -235,6 +266,37 @@ class QdrantStorageService:
             }
             for r in result.points
         ]
+
+    async def _delete_doc_chunks(self, doc_id: str) -> None:
+        """
+        Delete all existing points for doc_id ahead of a re-upsert.
+        """
+        try:
+            await _with_retry(
+                partial(
+                    self.client.delete,
+                    collection_name=self.collection_name,
+                    points_selector=FilterSelector(
+                        filter=Filter(
+                            must=[
+                                FieldCondition(
+                                    key="doc_id",
+                                    match=MatchValue(value=doc_id),
+                                )
+                            ]
+                        )
+                    ),
+                )
+            )
+            logfire.info(f"Deleted existing chunks for document {doc_id}")
+        except Exception as e:
+            logfire.error(
+                f"Failed to delete chunks for document {doc_id}",
+                error=str(e),
+            )
+            raise
+
+        logfire.info(f"Deleted existing chunks for doc_id={doc_id} prior to upsert")
 
     async def chunk_count(self) -> int:
         current_count = await _with_retry(

@@ -20,7 +20,6 @@ from src.ingestion.chunking.chunk import (
 )
 from src.ingestion.chunking.Chunker import Chunker
 
-# Abbreviations whose trailing period must NOT be treated as a sentence end.
 _ABBREV: frozenset[str] = frozenset(
     {
         "Mr",

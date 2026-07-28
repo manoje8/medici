@@ -107,7 +107,7 @@ class Config:
     CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", 64))
     FLASHRANK_CACHE_DIR: str = os.getenv("FLASHRANK_CACHE_DIR", "/flashrank")
 
-    MAX_UPLOAD_BYTES: int = os.getenv("MAX_UPLOAD_BYTES", 100_000_00)
+    MAX_UPLOAD_BYTES: int = int(os.getenv("MAX_UPLOAD_BYTES", 100_000_00))
     MIN_RERANK_SCORE = 0.1
 
 

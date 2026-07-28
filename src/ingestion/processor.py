@@ -108,10 +108,11 @@ class Processor:
 
         if suffix in HTML_FORMATS | TEXT_FORMATS:
             return ChunkerStrategy.SENTENCE_BOUNDARY
-        elif suffix in OFFICE_FORMATS or suffix == ".pdf":
+
+        if suffix in OFFICE_FORMATS or suffix == ".pdf":
             return ChunkerStrategy.RECURSIVE_CHARACTER
-        else:
-            return ChunkerStrategy.FIXED
+
+        return ChunkerStrategy.FIXED
 
     @staticmethod
     def _hash_file_content(file_path: Path) -> str:
@@ -245,9 +246,8 @@ class Processor:
         )
 
         chunker = create_chunker(chunking_config)
-        text_chunks = chunker.chunk(content_list)
 
-        print(text_chunks)
+        text_chunks = chunker.chunk(content_list, doc_id=doc_id, source_file=str(file_path))
 
         if multimodal_items:
             multimodal_chunks = chunker.chunk_multimodal_items(
@@ -559,6 +559,11 @@ class Processor:
         parse_method: ParseMethod,
         text_blocks: list[tuple[str, int]] | None = None,
     ) -> dict:
+
+        if len(content_list) <= 1:
+            logfire.warn(f"Content is empty: {file_path}")
+            return {"doc_id": doc_id, "chunks_produced": 0, "vectors_stored": 0}
+
         chunks = await self._chunk_doc_content(
             file_path=file_path,
             content_list=content_list,
