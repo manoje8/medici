@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
@@ -11,6 +14,9 @@ from src.common.utils.constants import ParseMethod
 from src.common.utils.helper import supported_extensions_list
 from src.ingestion.processor import Processor
 
+if TYPE_CHECKING:
+    from src.api.rate_limiter import RateLimiter
+
 INGESTION_ROOT = Path(config_api.INGESTION_ROOT).resolve()
 INGESTION_ROOT.mkdir(parents=True, exist_ok=True)
 
@@ -21,10 +27,11 @@ class IngestionRequest(BaseModel):
     doc_id: str | None = None
 
 
-def create_document_routes():
+def create_document_routes(ingestion_limiter: RateLimiter | None = None):
     router = APIRouter(tags=["document"])
+    ingest_deps = [Depends(ingestion_limiter)] if ingestion_limiter is not None else []
 
-    @router.post("/ingestion")
+    @router.post("/ingestion", dependencies=ingest_deps)
     async def ingestion(
         file: UploadFile = File(...),
         parse_method: ParseMethod = Form(...),

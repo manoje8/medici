@@ -26,6 +26,7 @@ from src.agents.memory.short_term import ShortTermMemoryManager
 from src.agents.retrieval import RetrievalAgent
 from src.api.auth import auth_handler
 from src.api.config_api import config_api as _config_api
+from src.api.rate_limiter import AsyncRateLimiterBackend, RateLimiter
 from src.api.routers.document_routes import create_document_routes
 from src.api.routers.query_router import create_query_routes
 from src.common.cache.embedding_cache import EmbeddingCache
@@ -143,6 +144,20 @@ async def lifespan(app: FastAPI):
         app.state.qdrant = storage_service
         app.state.processor = processor
 
+        app.state.rate_limiter = None
+        if _config_api.RATE_LIMIT_ENABLED:
+            rl_backend = AsyncRateLimiterBackend(redis_url=config.REDIS_URL)
+            app.state.rate_limiter = rl_backend
+            closers.append(("rate limiter", rl_backend.aclose))
+            logfire.info(
+                "Rate limiting enabled",
+                query_limit=f"{_config_api.RATE_LIMIT_QUERY_MAX_REQUESTS}/{_config_api.RATE_LIMIT_QUERY_WINDOW_SECONDS}s",
+                ingestion_limit=f"{_config_api.RATE_LIMIT_INGESTION_MAX_REQUESTS}/{_config_api.RATE_LIMIT_INGESTION_WINDOW_SECONDS}s",
+                login_limit=f"{_config_api.RATE_LIMIT_LOGIN_MAX_REQUESTS}/{_config_api.RATE_LIMIT_LOGIN_WINDOW_SECONDS}s",
+            )
+        else:
+            logfire.info("Rate limiting disabled (RATE_LIMIT_ENABLED=false)")
+
     except Exception:
         logfire.error("Startup failed; rolling back partially-initialized resources")
         for _name, close in reversed(closers):
@@ -160,6 +175,18 @@ async def lifespan(app: FastAPI):
                 await close()
             except Exception:
                 logfire.error(f"Error closing {name} during shutdown")
+
+
+_query_limiter = RateLimiter(
+    scope="query",
+    max_requests=_config_api.RATE_LIMIT_QUERY_MAX_REQUESTS,
+    window_seconds=_config_api.RATE_LIMIT_QUERY_WINDOW_SECONDS,
+)
+_login_limiter = RateLimiter(
+    scope="login",
+    max_requests=_config_api.RATE_LIMIT_LOGIN_MAX_REQUESTS,
+    window_seconds=_config_api.RATE_LIMIT_LOGIN_WINDOW_SECONDS,
+)
 
 
 def create_apps():
@@ -200,8 +227,20 @@ def create_apps():
             content={"status": overall, "service": config.PROJECT_NAME, "dependencies": deps},
         )
 
-    app.include_router(create_document_routes())
-    app.include_router(create_query_routes())
+    app.include_router(
+        create_document_routes(
+            ingestion_limiter=RateLimiter(
+                scope="ingestion",
+                max_requests=_config_api.RATE_LIMIT_INGESTION_MAX_REQUESTS,
+                window_seconds=_config_api.RATE_LIMIT_INGESTION_WINDOW_SECONDS,
+            )
+        )
+    )
+    app.include_router(
+        create_query_routes(
+            query_limiter=_query_limiter,
+        )
+    )
 
     @app.get("/auth-status")
     async def get_auth_status():
@@ -223,7 +262,7 @@ def create_apps():
             "auth_mode": True,
         }
 
-    @app.post("/login")
+    @app.post("/login", dependencies=[Depends(_login_limiter)])
     async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         if not auth_handler.accounts:
             guest_token = auth_handler.create_access_token(

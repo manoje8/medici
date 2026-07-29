@@ -16,6 +16,19 @@ class ConfigApi:
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     ACCOUNTS: list[dict] = os.getenv("ACCOUNTS", [])
 
+    RATE_LIMIT_ENABLED: bool = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+
+    RATE_LIMIT_QUERY_MAX_REQUESTS: int = int(os.getenv("RATE_LIMIT_QUERY_MAX_REQUESTS", 30))
+    RATE_LIMIT_QUERY_WINDOW_SECONDS: int = int(os.getenv("RATE_LIMIT_QUERY_WINDOW_SECONDS", 60))
+
+    RATE_LIMIT_INGESTION_MAX_REQUESTS: int = int(os.getenv("RATE_LIMIT_INGESTION_MAX_REQUESTS", 20))
+    RATE_LIMIT_INGESTION_WINDOW_SECONDS: int = int(
+        os.getenv("RATE_LIMIT_INGESTION_WINDOW_SECONDS", 60)
+    )
+
+    RATE_LIMIT_LOGIN_MAX_REQUESTS: int = int(os.getenv("RATE_LIMIT_LOGIN_MAX_REQUESTS", 10))
+    RATE_LIMIT_LOGIN_WINDOW_SECONDS: int = int(os.getenv("RATE_LIMIT_LOGIN_WINDOW_SECONDS", 60))
+
     def validate(self) -> None:
         if not self.SECRET_KEY or self.SECRET_KEY == _WEAK_KEY_SENTINEL:
             logfire.warn(

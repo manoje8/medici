@@ -1,8 +1,15 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from src.agents.graph.runner import GraphPipeline
 from src.api.deps import get_pipeline
+
+if TYPE_CHECKING:
+    from src.api.rate_limiter import RateLimiter
 
 
 class QueryRequest(BaseModel):
@@ -12,10 +19,13 @@ class QueryRequest(BaseModel):
     is_multi_retriever: bool = False
 
 
-def create_query_routes(api_key: str | None = None, top_k: int = 60):
+def create_query_routes(
+    api_key: str | None = None, top_k: int = 60, query_limiter: RateLimiter | None = None
+):
     router = APIRouter(tags=["query"])
+    route_deps = [Depends(query_limiter)] if query_limiter is not None else []
 
-    @router.post("/query")
+    @router.post("/query", dependencies=route_deps)
     async def create_query(
         body: QueryRequest,
         pipeline: GraphPipeline = Depends(get_pipeline),
