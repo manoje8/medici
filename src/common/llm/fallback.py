@@ -1,3 +1,5 @@
+from collections.abc import AsyncIterator
+
 import logfire
 
 from src.common.llm.base import BaseLLM, LLMResponse
@@ -34,6 +36,34 @@ class FallbackClient(BaseLLM):
             return await self.fallback.complete(
                 prompt, max_tokens, stage_tag, system_prompt, **kwargs
             )
+
+    async def stream_complete(
+        self,
+        prompt: str,
+        max_tokens: int = 1024,
+        stage_tag: str = "unknown",
+        system_prompt: str | None = None,
+        **kwargs,
+    ) -> AsyncIterator[str]:
+        """Stream from primary; on first error fall back to secondary."""
+        try:
+            yielded_any = False
+            async for token in self.primary.stream_complete(
+                prompt, max_tokens, stage_tag, system_prompt, **kwargs
+            ):
+                yielded_any = True
+                yield token
+            if not yielded_any:
+                raise RuntimeError("Primary stream yielded no tokens")
+        except Exception as e:
+            logfire.warning(
+                f"Primary LLM stream ({self.primary.model_name}) failed for stage "
+                f"'{stage_tag}': {e}. Falling back to {self.fallback.model_name}."
+            )
+            async for token in self.fallback.stream_complete(
+                prompt, max_tokens, stage_tag, system_prompt, **kwargs
+            ):
+                yield token
 
     async def _complete_impl(
         self, prompt: str, max_token: int, system_prompt: str | None = None, **kwargs

@@ -112,7 +112,7 @@ return {1, 0}
         await self._redis.aclose()
 
 
-@dataclass
+@dataclass(unsafe_hash=True)
 class RateLimiter:
     """
     FastAPI dependency factory that enforces a sliding-window rate limit.
@@ -131,8 +131,7 @@ class RateLimiter:
     scope: str
     max_requests: int
     window_seconds: int
-    # Internal: keep track of defined limiters for logging/introspection
-    _instances: list[RateLimiter] = field(default_factory=list, init=False, repr=False)
+    _instances: list[RateLimiter] = field(default_factory=list, init=False, repr=False, hash=False)
 
     async def __call__(
         self,

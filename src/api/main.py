@@ -204,7 +204,7 @@ def create_apps():
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=["X-New_Token"],
+        expose_headers=["X-New_Token", "Cache-Control", "Content-Type"],
     )
 
     @app.get("/")

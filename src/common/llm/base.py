@@ -2,6 +2,7 @@ import asyncio
 import json
 import re
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
 import logfire
@@ -116,6 +117,50 @@ class BaseLLM(ABC):
         self, prompt: str, max_token: int, system_prompt: str | None = None, **kwargs
     ) -> LLMResponse:
         pass
+
+    async def _stream_impl(
+        self,
+        prompt: str,
+        max_tokens: int,
+        system_prompt: str | None = None,
+        **kwargs,
+    ) -> AsyncIterator[str]:
+        """Override in subclasses to provide real token-by-token streaming.
+
+        The default implementation calls ``_complete_impl`` and yields the
+        entire response as a single chunk — safe for clients that don't
+        natively support streaming.
+        """
+        response = await self._complete_impl(
+            prompt, max_tokens, system_prompt=system_prompt, **kwargs
+        )
+        yield response.text
+
+    async def stream_complete(
+        self,
+        prompt: str,
+        max_tokens: int = 1024,
+        stage_tag: str = "unknown",
+        system_prompt: str | None = None,
+        **kwargs,
+    ) -> AsyncIterator[str]:
+        """
+        Async-generator that yields text tokens as they arrive.
+
+        Wraps ``_stream_impl`` with the same logfire span used by
+        ``complete()`` so observability is preserved.
+        """
+        with logfire.span(
+            "llm.stream_complete",
+            model=self.model_name,
+            stage=stage_tag,
+            prompt_length=len(prompt),
+            has_system_prompt=system_prompt is not None,
+        ):
+            async for token in self._stream_impl(
+                prompt, max_tokens, system_prompt=system_prompt, **kwargs
+            ):
+                yield token
 
     async def complete(
         self,

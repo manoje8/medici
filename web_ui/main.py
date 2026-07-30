@@ -1,6 +1,8 @@
+import json
 import os
 import time
 import uuid
+from collections.abc import Generator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -157,7 +159,7 @@ class BackendClient:
         )
 
     def query(self, question: str, session_id: str, user_id: str) -> dict[str, Any]:
-        """Send a query to the backend."""
+        """Send a query to the backend (non-streaming, kept for compatibility)."""
         return self._make_request(
             method="POST",
             endpoint="/query",
@@ -168,6 +170,52 @@ class BackendClient:
                 "user_id": user_id,
             },
         )
+
+    def query_stream(
+        self, question: str, session_id: str, user_id: str
+    ) -> Generator[dict[str, Any], None, None]:
+        """
+        Stream SSE events from ``POST /query/stream``.
+
+        Yields parsed event dicts.  Stops after the ``done`` or ``error``
+        event is received or when the connection drops.
+        """
+        url = f"{self.config.backend_url}/query/stream"
+        payload = {"question": question, "session_id": session_id, "user_id": user_id}
+
+        with self.logger.log_span("API POST /query/stream"):
+            try:
+                with self.session.post(
+                    url,
+                    json=payload,
+                    stream=True,
+                    timeout=self.config.query_timeout,
+                ) as resp:
+                    resp.raise_for_status()
+                    for raw_line in resp.iter_lines(decode_unicode=True):
+                        if not raw_line:
+                            continue
+                        if raw_line.startswith("data:"):
+                            data_str = raw_line[len("data:") :].strip()
+                            try:
+                                event = json.loads(data_str)
+                            except json.JSONDecodeError:
+                                continue
+                            yield event
+                            if event.get("type") in ("done", "error"):
+                                return
+            except requests.exceptions.Timeout as e:
+                raise TimeoutError(
+                    f"Stream request timed out after {self.config.query_timeout}s"
+                ) from e
+            except requests.exceptions.ConnectionError as e:
+                raise ConnectionError(
+                    f"Unable to connect to backend at {self.config.backend_url}"
+                ) from e
+            except requests.exceptions.HTTPError as e:
+                raise RuntimeError(
+                    f"Backend returned error: {e.response.status_code} - {e.response.text}"
+                ) from e
 
     def health_check(self) -> dict[str, Any]:
         """Check backend health."""
@@ -459,12 +507,113 @@ class ChatRenderer:
             self.state_manager.set("processing_message", False)
 
     def _get_and_display_response(self, prompt: str):
-        """Get response from backend and display it."""
+        """Stream response from backend and display it progressively."""
         with st.chat_message("assistant", avatar=self.config.ai_avatar):
-            response = self._fetch_response(prompt)
+            self._fetch_and_stream_response(prompt)
 
-            if response:
-                self._display_response(response)
+    def _fetch_and_stream_response(self, prompt: str):
+        """Consume the SSE stream and render pipeline stages + answer tokens."""
+        status_placeholder = st.empty()
+        answer_placeholder = st.empty()
+        sources_placeholder = st.empty()
+
+        collected_tokens: list[str] = []
+        final_event: dict[str, Any] | None = None
+        stage_lines: list[str] = []
+
+        # Stage icons for pipeline progress
+        _STAGE_ICONS: dict[str, str] = {
+            "rewrite_query": "✏️",
+            "route": "🔀",
+            "plan": "📋",
+            "retrieve": "🔍",
+            "hop_check": "⚖️",
+            "grade": "📊",
+            "rewrite_for_refinement": "🔄",
+            "synthesize": "✨",
+            "direct_synthesize": "✨",
+            "handle_simple_response": "💬",
+        }
+
+        def _render_status():
+            if stage_lines:
+                status_placeholder.markdown(
+                    "\n".join(f"{line}" for line in stage_lines),
+                    unsafe_allow_html=False,
+                )
+
+        try:
+            for event in self.api_client.query_stream(
+                question=prompt,
+                session_id=self.state_manager.get("session_id"),
+                user_id=self.state_manager.get("user_id"),
+            ):
+                etype = event.get("type")
+
+                if etype == "progress":
+                    node = event.get("node", "")
+                    msg = event.get("message", "")
+                    icon = _STAGE_ICONS.get(node, "⚙️")
+                    stage_lines.append(f"{icon} {msg}…")
+                    _render_status()
+
+                elif etype == "token":
+                    collected_tokens.append(event.get("content", ""))
+                    answer_so_far = "".join(collected_tokens)
+                    answer_placeholder.markdown(answer_so_far + "▌")
+
+                elif etype == "done":
+                    final_event = event
+                    # Finalize answer (may come from cache or direct path)
+                    if not collected_tokens:
+                        answer = event.get("answer", "")
+                        if answer:
+                            self._display_animated_text_in(answer_placeholder, answer)
+                    else:
+                        answer_placeholder.markdown("".join(collected_tokens))
+
+                elif etype == "error":
+                    status_placeholder.empty()
+                    st.error(f"⚠️ {event.get('message', 'Unknown error')}")
+                    return
+
+        except (TimeoutError, ConnectionError, RuntimeError) as e:
+            status_placeholder.empty()
+            st.error(f"⚠️ {str(e)}")
+            self.logger.log_error("Stream response failed", error=str(e))
+            return
+        except Exception as e:
+            status_placeholder.empty()
+            st.error(f"⚠️ An unexpected error occurred: {str(e)}")
+            self.logger.log_error("Unexpected stream error", error=str(e))
+            return
+
+        status_placeholder.empty()
+
+        if final_event:
+            answer = final_event.get("answer") or "".join(collected_tokens)
+            sources = final_event.get("sources", [])
+
+            if sources:
+                with sources_placeholder.container():
+                    self._display_sources(sources)
+
+            messages = self.state_manager.get("messages", [])
+            messages.append({"role": "assistant", "content": answer})
+            self.state_manager.set("messages", messages)
+
+            cache_hit = final_event.get("cache_hit", False)
+            if cache_hit:
+                st.caption("⚡ Served from semantic cache")
+
+    def _display_animated_text_in(self, placeholder, text: str):
+        """Animate text into a specific placeholder element."""
+        displayed = ""
+        for char in text:
+            displayed += char
+            placeholder.markdown(displayed + "▌")
+            time.sleep(self.config.typing_speed)
+        placeholder.markdown(text)
 
     def _fetch_response(self, prompt: str) -> dict[str, Any] | None:
         """Fetch response from backend with loading states."""

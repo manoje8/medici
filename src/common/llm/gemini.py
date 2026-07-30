@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import AsyncIterator
 
 import logfire
 from google import genai
@@ -70,3 +71,54 @@ class GeminiClient(BaseLLM):
             }
 
         return LLMResponse(response.text, metadata={"token_usage": token_usage})
+
+    async def _stream_impl(
+        self,
+        prompt: str,
+        max_tokens: int = 1024,
+        system_prompt: str | None = None,
+        **kwargs,
+    ) -> AsyncIterator[str]:
+        """Yield text tokens from Gemini's generate_content_stream."""
+        generate_config_kwargs: dict = {
+            "temperature": kwargs.get("temperature", 0.1),
+            "max_output_tokens": max_tokens,
+            "top_p": kwargs.get("top_p", 0.95),
+            "top_k": kwargs.get("top_k", 40),
+        }
+        if system_prompt:
+            generate_config_kwargs["system_instruction"] = system_prompt
+
+        loop = asyncio.get_event_loop()
+
+        import queue as _queue
+        import threading
+
+        q: _queue.Queue = _queue.Queue()
+        _SENTINEL = object()
+
+        def _producer():
+            try:
+                for chunk in self.client.models.generate_content_stream(
+                    model=self.model,
+                    contents=prompt,
+                    config=genai.types.GenerateContentConfig(**generate_config_kwargs),
+                ):
+                    if chunk.text:
+                        q.put(chunk.text)
+            except Exception as exc:
+                q.put(exc)
+            finally:
+                q.put(_SENTINEL)
+
+        thread = threading.Thread(target=_producer, daemon=True)
+        thread.start()
+
+        while True:
+            item = await loop.run_in_executor(None, q.get)
+            if item is _SENTINEL:
+                break
+            if isinstance(item, Exception):
+                logfire.error("GeminiClient stream error", error=str(item))
+                break
+            yield item

@@ -1,3 +1,5 @@
+from collections.abc import AsyncIterator
+
 from langchain_groq import ChatGroq
 
 from src.common.llm.base import BaseLLM, LLMResponse
@@ -51,3 +53,20 @@ class GroqClient(BaseLLM):
             }
 
         return LLMResponse(response.content, {"token_usage": token_usage})
+
+    async def _stream_impl(
+        self,
+        prompt: str,
+        max_tokens: int = 1024,
+        system_prompt: str | None = None,
+        **kwargs,
+    ) -> AsyncIterator[str]:
+        """Yield text tokens from Groq's astream."""
+        messages: list[dict] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        async for chunk in self.client.astream(messages):
+            if chunk.content:
+                yield chunk.content
