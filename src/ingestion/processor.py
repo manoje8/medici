@@ -575,9 +575,16 @@ class Processor:
         self.in_storage.upload(key="chunks", data=chunks)
         logfire.info(f"Document chunking completed: {len(chunks)}")
 
-        embedded_chunks = await self.embedding_service.embed_chunks(chunks)
+        embedded_chunks, dead_letter = await self.embedding_service.embed_chunks(chunks)
         self.in_storage.upload(key="embedded_chunks", data=embedded_chunks)
         logfire.info(f"Stage 3 complete: {len(embedded_chunks)} vectors")
+
+        if dead_letter:
+            logfire.warn(
+                f"Stage 3: {len(dead_letter)} chunk(s) could not be embedded and were "
+                f"dead-lettered for {file_path}. Indices: "
+                + str([d["chunk_index"] for d in dead_letter])
+            )
 
         await self.storage_service.upsert_embedded_chunks(embedded_chunks)
         logfire.info("Stage 4 complete: stored in Qdrant")
@@ -586,6 +593,15 @@ class Processor:
             "doc_id": doc_id,
             "chunks_produced": len(chunks),
             "vectors_stored": len(embedded_chunks),
+            "dead_letter_count": len(dead_letter),
+            "dead_letter_chunks": [
+                {
+                    "chunk_index": d["chunk_index"],
+                    "source_file": d["chunk"].source_file,
+                    "error": d["error"],
+                }
+                for d in dead_letter
+            ],
         }
 
 

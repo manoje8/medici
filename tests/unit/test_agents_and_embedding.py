@@ -458,15 +458,19 @@ class TestEmbeddingService:
         chunks = [_make_chunk(text=f"chunk {i}", chunk_index=i) for i in range(2)]
         self._mock_embed_response(mock_genai, [[0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8]])
 
-        result = await service.embed_chunks(chunks)
+        embedded_chunks, dead_letter = await service.embed_chunks(chunks)
 
-        assert len(result) == 2
-        assert all(isinstance(r, EmbeddedChunk) for r in result)
+        assert dead_letter == []
+
+        assert len(embedded_chunks) == 2
+        assert all(isinstance(r, EmbeddedChunk) for r in embedded_chunks)
 
     @pytest.mark.asyncio
     async def test_embed_chunks_empty_input_returns_empty(self, service):
         result = await service.embed_chunks([])
-        assert result == []
+        assert len(result) == 2
+        assert result[0] == []
+        assert result[1] == []
 
     @pytest.mark.asyncio
     async def test_embed_chunks_batches_correctly(self, service, mock_genai):
@@ -483,9 +487,9 @@ class TestEmbeddingService:
 
         mock_genai.models.embed_content.side_effect = side_effect
 
-        result = await service.embed_chunks(chunks)
+        embedded_chunks, dead_letter = await service.embed_chunks(chunks)
 
-        assert len(result) == 5
+        assert len(embedded_chunks) == 5
         assert mock_genai.models.embed_content.call_count == 3  # ceil(5/2)
 
     @pytest.mark.asyncio
@@ -493,16 +497,18 @@ class TestEmbeddingService:
         chunks = [_make_chunk()]
         self._mock_embed_response(mock_genai, [[0.1, 0.2, 0.3, 0.4]])
 
-        result = await service.embed_chunks(chunks)
+        embedded_chunks, dead_letter = await service.embed_chunks(chunks)
 
-        assert result[0].model_name == "text-embedding-004"
+        assert len(embedded_chunks) == 1
+        assert dead_letter == []
+        assert embedded_chunks[0].model_name == "text-embedding-004"
 
     @pytest.mark.asyncio
     async def test_embed_chunks_preserves_chunk_reference(self, service, mock_genai):
         chunk = _make_chunk(text="preserved", doc_id="d42")
         self._mock_embed_response(mock_genai, [[0.1, 0.2, 0.3, 0.4]])
 
-        result = await service.embed_chunks([chunk])
+        result, dead_letter = await service.embed_chunks([chunk])
 
         assert result[0].chunk is chunk
 

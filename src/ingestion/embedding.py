@@ -215,12 +215,33 @@ class EmbeddingService:
                 )
                 await asyncio.sleep(self.retry_delay * (attempt + 1))
 
-    async def embed_chunks(self, chunks: list[Chunk]) -> list[EmbeddedChunk]:
-        """Embed a list of chunks in batches, skipping API calls for cached chunks."""
+    async def embed_chunks(
+        self,
+        chunks: list[Chunk],
+    ) -> tuple[list[EmbeddedChunk], list[dict]]:
+        """
+        Embed a list of chunks in batches, skipping API calls for cached chunks.
+
+        Returns
+        -------
+        embedded : list[EmbeddedChunk]
+            Successfully embedded chunks (order matches *chunks*).
+        dead_letter : list[dict]
+            Chunks that could not be embedded after all retries.  Each entry
+            has the shape::
+
+                {
+                    "chunk": Chunk,
+                    "chunk_index": int,      # original position in *chunks*
+                    "error": str,
+                }
+
+            An empty list means every chunk was embedded successfully.
+        """
 
         if not chunks:
             logfire.debug("No chunks to embed")
-            return []
+            return [], []
 
         result_map: dict[int, EmbeddedChunk] = {}
         uncached_indices: list[int] = []
@@ -247,6 +268,7 @@ class EmbeddingService:
             )
 
         uncached_chunks = [chunks[i] for i in uncached_indices]
+        dead_letter: list[dict] = []
 
         if uncached_chunks:
             batches = self._make_batches(uncached_chunks)
@@ -260,7 +282,7 @@ class EmbeddingService:
                 max_tokens=self.max_tokens_per_batch,
             )
 
-            embedded_uncached: list[EmbeddedChunk] = []
+            uncached_cursor = 0
             for batch_num, batch in enumerate(batches):
                 logfire.debug(
                     "Embedding batch {batch_num}/{total_batches} ({batch_size} chunks)",
@@ -268,15 +290,44 @@ class EmbeddingService:
                     total_batches=len(batches),
                     batch_size=len(batch),
                 )
-                embedded_uncached.extend(await self._embed_batch(batch))
+                try:
+                    batch_results = await self._embed_batch(batch)
+                    for ec in batch_results:
+                        orig_idx = uncached_indices[uncached_cursor]
+                        result_map[orig_idx] = ec
+                        uncached_cursor += 1
+                except Exception as e:
+                    logfire.error(
+                        "Dead-letter: batch {batch_num}/{total_batches} failed permanently "
+                        "({batch_size} chunks skipped). error={error}",
+                        batch_num=batch_num + 1,
+                        total_batches=len(batches),
+                        batch_size=len(batch),
+                        error=str(e),
+                    )
+                    for chunk in batch:
+                        orig_idx = uncached_indices[uncached_cursor]
+                        dead_letter.append(
+                            {
+                                "chunk": chunk,
+                                "chunk_index": orig_idx,
+                                "error": str(e),
+                            }
+                        )
+                        uncached_cursor += 1
 
-            for orig_idx, ec in zip(uncached_indices, embedded_uncached, strict=False):
-                result_map[orig_idx] = ec
+        if dead_letter:
+            logfire.warn(
+                "Dead-letter queue: {count}/{total} chunks could not be embedded and were skipped.",
+                count=len(dead_letter),
+                total=len(chunks),
+            )
 
-        embedded = [result_map[i] for i in range(len(chunks))]
+        embedded = [result_map[i] for i in range(len(chunks)) if i in result_map]
         logfire.info(
-            "Embedding complete: {total} vectors, {unique} unique from cache",
+            "Embedding complete: {total} vectors ({dead} dead-lettered), {unique} unique from cache",
             total=len(embedded),
+            dead=len(dead_letter),
             unique=len(embedded) - cache_hits,
         )
-        return embedded
+        return embedded, dead_letter
