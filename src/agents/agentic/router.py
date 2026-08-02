@@ -37,6 +37,7 @@ INTENT SIGNAL MAPPING (apply before category matching):
 - "tell me more / elaborate / what did you mean"                      → CLARIFICATION
 - "what can you do / who are you / what do you know"                  → META
 - greetings / farewells / small talk                                  → CHITCHAT
+- "what is my name / do you remember / what did I tell you"           → CONVERSATIONAL
 
 CLASSIFICATION TAXONOMY:
 
@@ -117,6 +118,13 @@ CLASSIFICATION TAXONOMY:
    - Action: System introspection
    - Retrieval: Minimal, use system prompt
 
+9. **CONVERSATIONAL** - Questions answerable from conversation history
+   - Memory recall: "What is my name?", "What did I just say?"
+   - Session context: "Do you remember what I told you?", "What was my first question?"
+   - Personal details shared earlier: "Where did I say I work?", "What topic did I ask about?"
+   - Action: No document retrieval, answer from conversation memory
+   - Retrieval: None, use session history only
+
 RETRIEVAL STRATEGY INDICATORS:
 - needs_hybrid_search: bool (keyword + semantic)
 - needs_multi_hop: bool (requires multiple retrieval steps)
@@ -134,7 +142,7 @@ CROSS-CUTTING CONSIDERATIONS:
 
 Respond with EXACTLY this JSON format:
 {{
-    "primary_category": "factual|comparative|analytical|summarization|chitchat|clarification|procedural|meta",
+    "primary_category": "factual|comparative|analytical|summarization|chitchat|clarification|procedural|meta|conversational",
     "secondary_categories": ["list", "of", "subcategories"],
     "confidence_score": 0.95,
     "reasoning": "Detailed classification rationale",
@@ -277,8 +285,8 @@ Respond with EXACTLY this JSON format:
             result["retrieval_strategy"]["chunking_strategy"] = "large"
             result["retrieval_strategy"]["max_retrieval_depth"] = 3
 
-        if result["primary_category"] == "chitchat":
-            logfire.info("Chitchat detected — disabling retrieval")
+        if result["primary_category"] in ("chitchat", "conversational"):
+            logfire.info(f"{result['primary_category']} detected — disabling retrieval")
             result["retrieval_strategy"]["target_chunks"] = 0
             result["requires_citation"] = False
             result["requires_source_attribution"] = False

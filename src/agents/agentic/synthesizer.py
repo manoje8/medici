@@ -38,6 +38,8 @@ _CITATION_RE = re.compile(
     r"\[Source:\s*(?P<source>[^|\]]+?)\s*\|\s*Section:\s*(?P<section>[^\]]+?)\]"
 )
 
+_CITATION_FORMAT_INSTRUCTION = "[Source: <source name> | Section: <section name>]"
+
 
 def _get(state: AgentState | dict, key: str, attr: str | None = None):
     """Unified accessor for both AgentState dataclass and LangGraph State dict."""
@@ -147,6 +149,8 @@ class SynthesizerAgent:
             return await self._synthesize_chitchat(state)
         elif question_category == "meta":
             return await self._synthesize_meta(state)
+        elif question_category == "conversational":
+            return await self._synthesize_conversational(state)
         elif question_category == "clarification":
             return await self._synthesize_clarification(state)
         elif question_category == "procedural":
@@ -174,6 +178,9 @@ class SynthesizerAgent:
                 yield token
         elif question_category == "meta":
             async for token in self._stream_meta(state):
+                yield token
+        elif question_category == "conversational":
+            async for token in self._stream_conversational(state):
                 yield token
         else:
             # All retrieval-based categories share the same prompt shape
@@ -207,6 +214,8 @@ class SynthesizerAgent:
 
         if category == "chitchat":
             answer = await self._synthesize_chitchat(state)
+        elif category == "conversational":
+            answer = await self._synthesize_conversational(state)
         else:
             answer = await self._synthesize_meta(state)
 
@@ -219,6 +228,9 @@ class SynthesizerAgent:
         """Synthesize factual answers with strict source attribution."""
         fallback = self._require_context(state)
         if fallback:
+            conversational_history = _get(state, "conversational_history")
+            if conversational_history:
+                return await self._synthesize_conversational(state)
             return fallback
 
         original_question = self._get_question(state)
@@ -279,6 +291,38 @@ Guidelines:
             prompt,
             max_tokens=config.SYNTHESIS_MAX_TOKENS_CHITCHAT,
             stage_tag="synthesize_chitchat",
+        )
+        return response.text
+
+    async def _synthesize_conversational(self, state: State | dict) -> str:
+        """Answer questions from conversation history (e.g. 'What is my name?')."""
+        original_question = self._get_question(state)
+        conversational_history = _get(state, "conversational_history") or ""
+
+        if not conversational_history:
+            return (
+                "I don't have any conversation history to reference. "
+                "This appears to be the start of our conversation."
+            )
+
+        prompt = f"""You are a helpful AI assistant answering a question about the current conversation.
+
+Conversation history:
+{conversational_history}
+
+User question: {original_question}
+
+Instructions:
+1. Answer the question using ONLY information from the conversation history above
+2. If the answer is clearly stated in the conversation, provide it directly
+3. If the information was never mentioned in the conversation, say so honestly
+4. Be concise and friendly
+"""
+
+        response = await self.llm.complete(
+            prompt,
+            max_tokens=config.SYNTHESIS_MAX_TOKENS_CHITCHAT,
+            stage_tag="synthesize_conversational",
         )
         return response.text
 
@@ -475,6 +519,7 @@ Guidelines:
 - Confirm understanding before elaborating
 - If the clarification requires information not available, say so
 - Only draw evidence from content inside <retrieved_context> tags
+- Cite every factual claim using the exact format: {_CITATION_FORMAT_INSTRUCTION}
 """
 
         response = await self.llm.complete(
@@ -601,6 +646,38 @@ Respond helpfully and offer to assist with document-based questions.
             prompt,
             max_tokens=config.SYNTHESIS_MAX_TOKENS_META,
             stage_tag="stream_synthesize_meta",
+        ):
+            yield token
+
+    async def _stream_conversational(self, state: State | dict) -> AsyncIterator[str]:
+        """Streaming synthesis for conversational-memory questions."""
+        original_question = self._get_question(state)
+        conversational_history = _get(state, "conversational_history") or ""
+
+        if not conversational_history:
+            yield (
+                "I don't have any conversation history to reference. "
+                "This appears to be the start of our conversation."
+            )
+            return
+
+        prompt = f"""You are a helpful AI assistant answering a question about the current conversation.
+
+Conversation history:
+{conversational_history}
+
+User question: {original_question}
+
+Instructions:
+1. Answer the question using ONLY information from the conversation history above
+2. If the answer is clearly stated in the conversation, provide it directly
+3. If the information was never mentioned in the conversation, say so honestly
+4. Be concise and friendly
+"""
+        async for token in self.llm.stream_complete(
+            prompt,
+            max_tokens=config.SYNTHESIS_MAX_TOKENS_CHITCHAT,
+            stage_tag="stream_synthesize_conversational",
         ):
             yield token
 
@@ -769,6 +846,7 @@ Guidelines:
 - Confirm understanding before elaborating
 - If the clarification requires information not available, say so
 - Only draw evidence from content inside <retrieved_context> tags
+- Cite every factual claim using the exact format: {_CITATION_FORMAT_INSTRUCTION}
 """
             max_tokens = config.SYNTHESIS_MAX_TOKENS_CLARIFICATION
         else:
@@ -816,19 +894,15 @@ Answer format:
         if not chunks:
             return response_text
 
-        known = {
-            (str(c.get("source", "unknown")).strip(), str(c.get("section", "unknown")).strip())
-            for c in chunks
-        }
-
-        has_valid_citation = any(
-            (m.group("source").strip(), m.group("section").strip()) in known
-            for m in _CITATION_RE.finditer(response_text)
-        )
+        has_valid_citation = bool(_CITATION_RE.search(response_text))
 
         if has_valid_citation:
             return response_text
 
+        known = {
+            (str(c.get("source", "unknown")).strip(), str(c.get("section", "unknown")).strip())
+            for c in chunks
+        }
         sections = list(dict.fromkeys(f"{s} — {sec}" for s, sec in known))
         footer = "\n\n---\n**Sources Used:**\n" + "\n".join(f"- {s}" for s in sections)
         return response_text + footer

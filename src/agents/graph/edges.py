@@ -17,7 +17,7 @@ def route_after_classify(state: State) -> str:
     """
     category = state.get("question_category", "factual").lower()
 
-    if category in ["chitchat", "meta"]:
+    if category in ["chitchat", "meta", "conversational"]:
         return "simple_response"
     if category == "summarization":
         msg = state.get("original_message", "").lower()
