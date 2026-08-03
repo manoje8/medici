@@ -55,8 +55,10 @@ class ShortTermMemoryManager:
             logfire.warning("session_data_corrupted", session_id=session_id, exc_info=True)
             return None
 
-    async def create_session(self, user_id: str) -> ConversationSession:
-        session = ConversationSession(session_id=str(uuid4()), user_id=user_id)
+    async def create_session(
+        self, user_id: str, session_id: str | None = None
+    ) -> ConversationSession:
+        session = ConversationSession(session_id=session_id or str(uuid4()), user_id=user_id)
         await self._save(session)
         logfire.info(f"Created session: {session.session_id}")
         return session

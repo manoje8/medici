@@ -297,7 +297,7 @@ Guidelines:
     async def _synthesize_conversational(self, state: State | dict) -> str:
         """Answer questions from conversation history (e.g. 'What is my name?')."""
         original_question = self._get_question(state)
-        conversational_history = _get(state, "conversational_history") or ""
+        conversational_history = _get(state, "conversational_history") or []
 
         if not conversational_history:
             return (
@@ -308,7 +308,7 @@ Guidelines:
         prompt = f"""You are a helpful AI assistant answering a question about the current conversation.
 
 Conversation history:
-{conversational_history}
+{self._format_history(conversational_history)}
 
 User question: {original_question}
 
@@ -652,7 +652,7 @@ Respond helpfully and offer to assist with document-based questions.
     async def _stream_conversational(self, state: State | dict) -> AsyncIterator[str]:
         """Streaming synthesis for conversational-memory questions."""
         original_question = self._get_question(state)
-        conversational_history = _get(state, "conversational_history") or ""
+        conversational_history = _get(state, "conversational_history") or []
 
         if not conversational_history:
             yield (
@@ -664,7 +664,7 @@ Respond helpfully and offer to assist with document-based questions.
         prompt = f"""You are a helpful AI assistant answering a question about the current conversation.
 
 Conversation history:
-{conversational_history}
+{self._format_history(conversational_history)}
 
 User question: {original_question}
 

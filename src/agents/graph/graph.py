@@ -23,16 +23,7 @@ from src.agents.graph.nodes import (
 from src.agents.graph.state import State
 
 
-def build_rag_graph(
-    short_term,
-    rewriter,
-    router,
-    planner,
-    retrieval_agent,
-    grader,
-    synthesizer,
-    is_multi_retriever: bool = False,
-):
+def build_rag_graph(short_term, rewriter, router, planner, retrieval_agent, grader, synthesizer):
     builder = StateGraph(State)
 
     builder.add_node(

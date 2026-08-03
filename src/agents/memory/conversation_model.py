@@ -24,6 +24,7 @@ class ConversationSession:
         return self.turns[-n:]
 
     def to_prompt_format(self, n: int = 6) -> str:
+        """Return a plain-text string of recent turns (used by QueryRewriter)."""
         recent = self.get_recent_turns(n)
 
         lines = []
@@ -33,6 +34,33 @@ class ConversationSession:
             lines.append(f"{prefix}: {turn.content}")
 
         return "\n".join(lines)
+
+    def to_history_dicts(self, n: int = 6) -> list[dict]:
+        """
+        Return recent turns as list[dict] with 'user'/'assistant' keys.
+
+        This is the format expected by the graph State (``conversational_history``)
+        and consumed by ``SynthesizerAgent._format_history()``.
+        Turns are paired so each dict contains one user message and the
+        assistant reply that immediately followed it.
+        """
+        recent = self.get_recent_turns(n)
+        pairs: list[dict] = []
+        i = 0
+        while i < len(recent):
+            turn = recent[i]
+            if turn.role == "user":
+                user_msg = turn.content
+                asst_msg = ""
+                if i + 1 < len(recent) and recent[i + 1].role == "assistant":
+                    asst_msg = recent[i + 1].content
+                    i += 2
+                else:
+                    i += 1
+                pairs.append({"user": user_msg, "assistant": asst_msg})
+            else:
+                i += 1
+        return pairs
 
 
 @dataclass

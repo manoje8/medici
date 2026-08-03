@@ -5,6 +5,8 @@ import logfire
 from src.agents.memory.conversation_model import ConversationSession
 from src.common.utils.config import config
 
+_UNCACHEABLE_CATEGORIES = frozenset({"chitchat", "meta", "conversational", "summarization"})
+
 
 class GraphPipeline:
     def __init__(self, graph, short_term_memory, semantic_cache=None, llm_clients=None):
@@ -23,7 +25,9 @@ class GraphPipeline:
 
         session: ConversationSession = await self.short_term.get_session(session_id)
         if not session:
-            session = await self.short_term.create_session(user_id)
+            session = await self.short_term.create_session(user_id, session_id=session_id)
+
+        history = session.to_history_dicts()
 
         await self.short_term.append_turn(
             session=session,
@@ -60,12 +64,9 @@ class GraphPipeline:
                         "token_usage": cached.token_usage,
                     }
             except Exception as e:
-                # Cache errors must never break the hot path
                 logfire.warning(f"SemanticCache lookup failed, running full pipeline: {e}")
 
         graph_config = {"configurable": {"thread_id": session.session_id}}
-
-        history = session.to_prompt_format()
 
         initial_state = {
             "session_id": session.session_id,
@@ -132,15 +133,22 @@ class GraphPipeline:
         )
 
         if self._semantic_cache is not None:
-            try:
-                await self._semantic_cache.store(
-                    query=user_message,
-                    answer=result["final_answer"],
-                    sources=result.get("sources", []),
-                    token_usage={"total_calls": total_calls, "total_tokens": total_tokens},
+            category = result.get("question_category", "").lower()
+            if category not in _UNCACHEABLE_CATEGORIES:
+                try:
+                    await self._semantic_cache.store(
+                        query=user_message,
+                        answer=result["final_answer"],
+                        sources=result.get("sources", []),
+                        token_usage={"total_calls": total_calls, "total_tokens": total_tokens},
+                    )
+                except Exception as e:
+                    logfire.warning(f"SemanticCache store failed: {e}")
+            else:
+                logfire.info(
+                    "SemanticCache store skipped (uncacheable category)",
+                    category=category,
                 )
-            except Exception as e:
-                logfire.warning(f"SemanticCache store failed: {e}")
 
         return {
             "answer": result["final_answer"],
@@ -154,7 +162,8 @@ class GraphPipeline:
         }
 
     async def chat_stream(self, user_message: str, session_id: str, user_id: str):
-        """Async-generator that streams pipeline progress + answer tokens.
+        """
+        Async-generator that streams pipeline progress + answer tokens.
 
         Yields dicts shaped for SSE consumption:
 
@@ -194,7 +203,9 @@ class GraphPipeline:
 
         session = await self.short_term.get_session(session_id)
         if not session:
-            session = await self.short_term.create_session(user_id)
+            session = await self.short_term.create_session(user_id, session_id=session_id)
+
+        history = session.to_history_dicts()
 
         await self.short_term.append_turn(
             session=session,
@@ -248,7 +259,6 @@ class GraphPipeline:
         }
 
         graph_config = {"configurable": {"thread_id": session.session_id}}
-        history = session.to_prompt_format()
 
         initial_state = {
             "session_id": session.session_id,
@@ -357,7 +367,8 @@ class GraphPipeline:
             session_id=session.session_id,
         )
 
-        if self._semantic_cache is not None and answer:
+        category = final_state.get("question_category", "").lower()
+        if self._semantic_cache is not None and answer and category not in _UNCACHEABLE_CATEGORIES:
             try:
                 await self._semantic_cache.store(
                     query=user_message,
@@ -367,6 +378,11 @@ class GraphPipeline:
                 )
             except Exception as e:
                 logfire.warning(f"SemanticCache store failed (stream): {e}")
+        elif self._semantic_cache is not None and answer:
+            logfire.info(
+                "SemanticCache store skipped (uncacheable category, stream)",
+                category=category,
+            )
 
         yield {
             "type": "done",

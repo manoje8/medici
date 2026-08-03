@@ -77,7 +77,11 @@ class TestSessionHandling:
     async def test_empty_session_id_creates_new_session(self, pipeline, mock_short_term):
         await pipeline.chat("hello", session_id="", user_id="u1")
         # create_session must be called (since get_session returns None)
-        mock_short_term.create_session.assert_called_once_with("u1")
+        mock_short_term.create_session.assert_called_once()
+        call_args = mock_short_term.create_session.call_args
+        assert call_args[0][0] == "u1"
+        assert "session_id" in call_args[1]
+        assert call_args[1]["session_id"].startswith("u1_")
 
     async def test_existing_session_returned_by_get_session_is_reused(
         self, pipeline, mock_short_term
