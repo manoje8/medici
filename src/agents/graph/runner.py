@@ -1,3 +1,4 @@
+import traceback
 import uuid
 
 import logfire
@@ -304,6 +305,7 @@ class GraphPipeline:
 
         except Exception as exc:
             logfire.warning(f"Graph stream error: {exc}")
+            logfire.warning(f"Full traceback: {traceback.format_exc()}")
             yield {"type": "error", "message": str(exc)}
             return
 

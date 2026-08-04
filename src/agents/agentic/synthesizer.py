@@ -81,6 +81,7 @@ def _build_context(state: AgentState | dict, max_chars: int | None = None) -> st
         return context
 
     chunks = state.get("accepted_chunks") or []
+    chunks = [c for c in chunks if isinstance(c, dict)]
 
     chunks = sorted(
         chunks,
@@ -891,6 +892,7 @@ Answer format:
 
     def _ensure_citations(self, response_text: str, state: State | dict) -> str:
         chunks = _get(state, "accepted_chunks") or []
+        chunks = [c for c in chunks if isinstance(c, dict)]
         if not chunks:
             return response_text
 

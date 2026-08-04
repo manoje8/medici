@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 import uuid
 from collections.abc import Generator
@@ -14,6 +15,117 @@ from dotenv import load_dotenv
 from src.common.utils.constants import ParseMethod
 
 load_dotenv(override=True)
+
+
+_CUSTOM_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+
+.answer-block {
+    border-radius: 14px;
+    padding: 22px 26px;
+    margin-bottom: 18px;
+    line-height: 1.75;
+    font-size: 0.97rem;
+}
+
+.sources-header {
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    margin: 20px 0 10px 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.source-card {
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 10px;
+    backdrop-filter: blur(8px);
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+.source-card:hover {
+    box-shadow: 0 0 18px rgba(99,102,241,0.25);
+}
+.source-card .source-index {
+    display: inline-block;
+    font-size: 0.70rem;
+    font-weight: 700;
+    border-radius: 50%;
+    width: 20px; height: 20px;
+    line-height: 20px;
+    text-align: center;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+.source-card .source-filename {
+    font-size: 0.85rem;
+    font-weight: 600;
+    word-break: break-all;
+}
+.source-card .source-section {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 500;
+    padding: 2px 10px;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+.source-card .source-excerpt {
+    font-size: 0.82rem;
+    margin-top: 6px;
+    line-height: 1.55;
+}
+
+.confidence-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+}
+.confidence-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.74rem;
+    font-weight: 600;
+    border-radius: 20px;
+    padding: 4px 12px;
+    letter-spacing: 0.04em;
+}
+.confidence-high   { background: rgba(34,197,94,0.18);  color: #4ade80; border: 1px solid rgba(34,197,94,0.35); }
+.confidence-medium { background: rgba(234,179,8,0.18);  color: #facc15; border: 1px solid rgba(234,179,8,0.35); }
+.confidence-low    { background: rgba(239,68,68,0.18);  color: #f87171; border: 1px solid rgba(239,68,68,0.35); }
+.confidence-label  { color: #64748b; font-size: 0.72rem; }
+
+.cache-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    background: rgba(99,102,241,0.15);
+    color: #a5b4fc;
+    border: 1px solid rgba(99,102,241,0.30);
+    border-radius: 20px;
+    padding: 3px 10px;
+}
+
+.pipeline-step {
+    font-size: 0.80rem;
+    color: #94a3b8;
+    padding: 3px 0;
+    animation: fadeIn 0.3s ease;
+}
+@keyframes fadeIn { from { opacity:0; transform: translateY(4px); } to { opacity:1; transform: translateY(0); } }
+</style>
+"""
 
 
 @dataclass(frozen=True)
@@ -511,6 +623,121 @@ class ChatRenderer:
         with st.chat_message("assistant", avatar=self.config.ai_avatar):
             self._fetch_and_stream_response(prompt)
 
+    _INLINE_SOURCE_RE = re.compile(
+        r"\[Source:\s*(?P<path>[^|\]]+?)\s*\|\s*Section:\s*(?P<section>[^\]]+?)\s*\]"
+    )
+    _CONFIDENCE_RE = re.compile(
+        r"Confidence level:\s*(?P<pct>\d+)%\s*\((?P<note>[^)]+)\)",
+        re.IGNORECASE,
+    )
+
+    @staticmethod
+    def _parse_answer(raw: str) -> tuple[str, list[dict], int | None, str]:
+        """
+        Extract inline citations and confidence info from a raw answer string.
+
+        Returns
+        -------
+        clean_text  : answer with citations stripped
+        citations   : list of {path, section, filename} dicts
+        confidence  : integer 0-100, or None
+        conf_note   : confidence explanatory note (may be empty)
+        """
+        seen: dict[str, int] = {}  # dedup by (path, section)
+        citations: list[dict] = []
+
+        def _replace(m: re.Match) -> str:
+            key = (m.group("path").strip(), m.group("section").strip())
+            if key not in seen:
+                seen[key] = len(citations) + 1
+                citations.append(
+                    {
+                        "path": key[0],
+                        "section": key[1],
+                        "filename": os.path.basename(key[0]),
+                        "index": seen[key],
+                    }
+                )
+            return f"[{seen[key]}]"
+
+        clean = ChatRenderer._INLINE_SOURCE_RE.sub(_replace, raw)
+
+        confidence: int | None = None
+        conf_note = ""
+        cm = ChatRenderer._CONFIDENCE_RE.search(clean)
+        if cm:
+            confidence = int(cm.group("pct"))
+            conf_note = cm.group("note").strip()
+            clean = ChatRenderer._CONFIDENCE_RE.sub("", clean).strip()
+
+        return clean.strip(), citations, confidence, conf_note
+
+    @staticmethod
+    def _confidence_class(pct: int) -> str:
+        if pct >= 75:
+            return "confidence-high", "✅"
+        if pct >= 45:
+            return "confidence-medium", "⚠️"
+        return "confidence-low", "❌"
+
+    def _render_rich_answer(
+        self,
+        answer_placeholder,
+        sources_placeholder,
+        raw_answer: str,
+        cache_hit: bool = False,
+    ):
+        """Parse answer, render clean text + citation cards + confidence badge."""
+        clean_text, citations, confidence, conf_note = self._parse_answer(raw_answer)
+
+        answer_placeholder.markdown(
+            f'<div class="answer-block">{clean_text}</div>',
+            unsafe_allow_html=True,
+        )
+
+        badge_parts: list[str] = []
+        if confidence is not None:
+            cls, icon = self._confidence_class(confidence)
+            title = conf_note or (
+                "High confidence"
+                if confidence >= 75
+                else "Moderate confidence"
+                if confidence >= 45
+                else "Low confidence"
+            )
+            badge_parts.append(
+                f'<span class="confidence-badge {cls}" title="{title}">{icon} {confidence}% confidence</span>'
+            )
+        if cache_hit:
+            badge_parts.append('<span class="cache-badge">⚡ Semantic cache</span>')
+
+        if badge_parts:
+            with sources_placeholder.container():
+                st.markdown(
+                    f'<div class="confidence-row">{" ".join(badge_parts)}</div>',
+                    unsafe_allow_html=True,
+                )
+
+        if citations:
+            with sources_placeholder.container():
+                st.markdown(
+                    '<div class="sources-header">📚 Sources</div>',
+                    unsafe_allow_html=True,
+                )
+                for c in citations:
+                    st.markdown(
+                        f"""
+<div class="source-card">
+  <div style="display:flex; align-items:center;">
+    <span class="source-index">{c["index"]}</span>
+    <span class="source-filename">{c["filename"]}</span>
+    <span class="source-section">§ {c["section"]}</span>
+  </div>
+  <div class="source-excerpt">{c["path"]}</div>
+</div>""",
+                        unsafe_allow_html=True,
+                    )
+
     def _fetch_and_stream_response(self, prompt: str):
         """Consume the SSE stream and render pipeline stages + answer tokens."""
         status_placeholder = st.empty()
@@ -537,10 +764,10 @@ class ChatRenderer:
 
         def _render_status():
             if stage_lines:
-                status_placeholder.markdown(
-                    "\n".join(f"{line}" for line in stage_lines),
-                    unsafe_allow_html=False,
+                steps_html = "".join(
+                    f'<div class="pipeline-step">{line}</div>' for line in stage_lines
                 )
+                status_placeholder.markdown(steps_html, unsafe_allow_html=True)
 
         try:
             for event in self.api_client.query_stream(
@@ -591,20 +818,27 @@ class ChatRenderer:
         status_placeholder.empty()
 
         if final_event:
-            answer = final_event.get("answer") or "".join(collected_tokens)
+            raw_answer = final_event.get("answer") or "".join(collected_tokens)
             sources = final_event.get("sources", [])
+            cache_hit = final_event.get("cache_hit", False)
 
-            if sources:
+            # Render rich answer with parsed citations / confidence
+            self._render_rich_answer(
+                answer_placeholder,
+                sources_placeholder,
+                raw_answer,
+                cache_hit=cache_hit,
+            )
+
+            _, citations, _, _ = self._parse_answer(raw_answer)
+            if sources and not citations:
                 with sources_placeholder.container():
                     self._display_sources(sources)
 
+            clean_text, _, _, _ = self._parse_answer(raw_answer)
             messages = self.state_manager.get("messages", [])
-            messages.append({"role": "assistant", "content": answer})
+            messages.append({"role": "assistant", "content": clean_text})
             self.state_manager.set("messages", messages)
-
-            cache_hit = final_event.get("cache_hit", False)
-            if cache_hit:
-                st.caption("⚡ Served from semantic cache")
 
     def _display_animated_text_in(self, placeholder, text: str):
         """Animate text into a specific placeholder element."""
@@ -671,14 +905,24 @@ class ChatRenderer:
         self.state_manager.set("messages", messages)
 
     def _display_sources(self, sources: list[str]):
-        """Display source context in expandable sections."""
-        with st.expander("📚 View Retrieved Context Sources"):
-            for i, source in enumerate(sources, 1):
-                preview = source[: self.config.source_preview_length].replace("\n", " ")
-                preview += "..." if len(source) > self.config.source_preview_length else ""
-
-                with st.expander(f"Source {i}: {preview}"):
-                    st.info(source)
+        """Display raw backend source strings as professional cards (fallback)."""
+        st.markdown(
+            '<div class="sources-header">📚 Retrieved Context</div>', unsafe_allow_html=True
+        )
+        for i, source in enumerate(sources, 1):
+            preview = source[: self.config.source_preview_length].replace("\n", " ")
+            preview += "…" if len(source) > self.config.source_preview_length else ""
+            st.markdown(
+                f"""
+<div class="source-card">
+  <div style="display:flex; align-items:center;">
+    <span class="source-index">{i}</span>
+    <span class="source-filename">Context excerpt</span>
+  </div>
+  <div class="source-excerpt">{preview}</div>
+</div>""",
+                unsafe_allow_html=True,
+            )
 
     def _display_animated_text(self, text: str):
         """Display text with typing animation effect."""
@@ -729,6 +973,9 @@ class MediciApp:
     def run(self):
         """Run the main application."""
         self.setup_page()
+
+        # Inject custom CSS once
+        st.markdown(_CUSTOM_CSS, unsafe_allow_html=True)
 
         st.title(f"{self.config.project_name} 🤖")
         st.caption("Your Intelligent Document Analysis Assistant")

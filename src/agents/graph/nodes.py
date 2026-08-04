@@ -115,7 +115,8 @@ async def hop_check(state: State, planner) -> dict:
     """
 
     last = state["retrieval_history"][-1]
-    accepted = (state.get("accepted_chunks") or []) + (last.get("chunks") or [])
+    raw_accepted = (state.get("accepted_chunks") or []) + (last.get("chunks") or [])
+    accepted = [c for c in raw_accepted if isinstance(c, dict)]
     current_hop = state.get("current_hop", 0)
     max_hops = state.get("max_hops", 4)
     hop_questions = list(state.get("hop_questions", []))
@@ -189,7 +190,9 @@ async def synthesize(state: State, synthesizer) -> dict:
     answer = await synthesizer.synthesize(state)
 
     accepted_chunks = state.get("accepted_chunks") or []
-    sources = list(set(c["source"] for c in accepted_chunks if c.get("source")))
+    dict_chunks = [c for c in accepted_chunks if isinstance(c, dict)]
+
+    sources = list(set(c["source"] for c in dict_chunks if c.get("source")))
 
     images = [
         {
@@ -199,7 +202,7 @@ async def synthesize(state: State, synthesizer) -> dict:
             "score": c.get("score"),
             "source": c.get("source", ""),
         }
-        for c in accepted_chunks
+        for c in dict_chunks
         if c.get("content_type") == "image" and c.get("image_path")
     ]
 
