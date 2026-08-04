@@ -50,7 +50,7 @@ Use "exhausted" if the information is likely not in this document.
 """
 
         with logfire.span("llm_retrieval_evaluation_result", query=query, num_results=len(results)):
-            response = await self.llm.complete(prompt)
+            response = await self.llm.complete(prompt, stage_tag="retrieval_eval", json_mode=True)
             parsed_result = response.parsed_json
             logfire.info(
                 "retrieval_evaluation_complete",

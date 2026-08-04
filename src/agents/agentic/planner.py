@@ -1,5 +1,7 @@
 import logfire
 
+_VALID_NEXT_ACTIONS = frozenset({"rephrase", "new_sub_question", "sufficient"})
+
 
 class PlannerAgent:
     def __init__(self, llm_client):
@@ -28,7 +30,7 @@ Original question: {question}
 Example output: ["What was memory usage in Q3?"]
 """
 
-        response = await self.llm.complete(prompt, stage_tag="planner")
+        response = await self.llm.complete(prompt, stage_tag="planner", json_mode=True)
         sub_questions = response.parsed_json
 
         logfire.info(f"Planner generated seed sub-question: {sub_questions}")
@@ -105,8 +107,30 @@ Respond with JSON only:
             num_hops=len(hop_questions),
             question_category=question_category,
         ):
-            response = await self.llm.complete(prompt, stage_tag="planner_hop")
-            result = response.parsed_json
+            response = await self.llm.complete(prompt, stage_tag="planner_hop", json_mode=True)
+
+            result = response.try_parsed_json(default=None)
+
+            if result is None:
+                logfire.warning(
+                    "plan_next_hop_parse_failure",
+                    raw_text=response.raw_text[:300],
+                    fallback_action="sufficient",
+                )
+                result = {
+                    "next_action": "sufficient",
+                    "query": None,
+                    "reasoning": "parse failure – defaulting to sufficient",
+                }
+
+            next_action = result.get("next_action", "sufficient")
+            if next_action not in _VALID_NEXT_ACTIONS:
+                logfire.warning(
+                    "plan_next_hop_invalid_action",
+                    received=next_action,
+                    fallback_action="sufficient",
+                )
+                result["next_action"] = "sufficient"
 
             logfire.info(
                 "plan_next_hop_decision",

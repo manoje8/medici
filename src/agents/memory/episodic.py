@@ -73,7 +73,7 @@ class EpisodicMemoryManager:
         }}
         """
 
-        response = await self.llm.complete(prompt)
+        response = await self.llm.complete(prompt, stage_tag="episodic_summary", json_mode=True)
         result = response.parsed_json
 
         summary = EpisodicSummary(

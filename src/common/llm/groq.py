@@ -34,7 +34,12 @@ class GroqClient(BaseLLM):
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
-        response = await self.client.ainvoke(messages)
+
+        client = self.client
+        if kwargs.get("json_mode", False):
+            client = client.bind(response_format={"type": "json_object"})
+
+        response = await client.ainvoke(messages)
 
         if not response or not response.content:
             raise RuntimeError("Groq returned empty response")

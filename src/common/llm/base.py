@@ -39,6 +39,50 @@ _NON_RETRYABLE_LLM_EXCEPTIONS = (
 )
 
 
+def _extract_outermost_json(text: str) -> str | None:
+    """
+    Return the substring of *text* that forms the first complete JSON
+    object ``{…}`` or array ``[…]``, or ``None`` if none is found.
+
+    Uses a character-by-character bracket-depth scanner instead of a greedy
+    ``re.DOTALL`` regex.  The greedy approach is brittle when the model emits
+    explanatory prose that contains ``{`` or ``[`` characters before the
+    actual JSON payload - the regex would start the match at the wrong
+    position and produce an invalid or truncated JSON string.
+
+    The scanner correctly skips over:
+    - String literals (so braces/brackets inside ``"..."`` are ignored)
+    - Escape sequences (``\\"``, ``\\\\``, etc.) inside strings
+    """
+    OPENERS = {"{": "}", "[": "]"}
+    for start, ch in enumerate(text):
+        if ch not in OPENERS:
+            continue
+        closer = OPENERS[ch]
+        depth = 0
+        in_string = False
+        i = start
+        while i < len(text):
+            c = text[i]
+            if in_string:
+                if c == "\\":
+                    i += 2
+                    continue
+                if c == '"':
+                    in_string = False
+            else:
+                if c == '"':
+                    in_string = True
+                elif c == ch:
+                    depth += 1
+                elif c == closer:
+                    depth -= 1
+                    if depth == 0:
+                        return text[start : i + 1]
+            i += 1
+    return None
+
+
 class LLMRequestContext:
     def __init__(
         self, prompt: str, max_tokens: int = 1024, system_prompt: str | None = None, **kwargs
@@ -73,14 +117,17 @@ class LLMResponse:
     def parsed_json(self):
         if self._parsed is None:
             text = self.raw_text.strip()
+
             text = re.sub(r"^```(?:json)?\s*", "", text)
             text = re.sub(r"\s*```$", "", text)
+            text = text.strip()
 
-            json_match = re.search(r"\{.*\}|\[.*\]", text, re.DOTALL)
-            if json_match:
-                text = json_match.group()
+            extracted = _extract_outermost_json(text)
+            if extracted is not None:
+                text = extracted
+
             try:
-                self._parsed = json.loads(text.strip())
+                self._parsed = json.loads(text)
             except json.JSONDecodeError as e:
                 raise LLMParseError(self.raw_text, e) from e
         return self._parsed
@@ -168,8 +215,12 @@ class BaseLLM(ABC):
         max_tokens: int = 1024,
         stage_tag: str = "unknown",
         system_prompt: str | None = None,
+        json_mode: bool = False,
         **kwargs,
     ) -> LLMResponse:
+        """
+        Call the LLM and return an :class:`LLMResponse`.
+        """
         context = LLMRequestContext(
             prompt=prompt,
             max_tokens=max_tokens,
@@ -188,10 +239,16 @@ class BaseLLM(ABC):
                     attempt=attempt,
                     prompt_length=len(prompt),
                     has_system_prompt=system_prompt is not None,
+                    json_mode=json_mode,
                 ) as span:
                     response = await asyncio.wait_for(
                         self._complete_with_metadata(
-                            prompt, max_tokens, context, system_prompt=system_prompt, **kwargs
+                            prompt,
+                            max_tokens,
+                            context,
+                            system_prompt=system_prompt,
+                            json_mode=json_mode,
+                            **kwargs,
                         ),
                         timeout=self.timeout_seconds,
                     )
@@ -239,10 +296,11 @@ class BaseLLM(ABC):
         max_tokens: int,
         context: LLMRequestContext,
         system_prompt: str | None = None,
+        json_mode: bool = False,
         **kwargs,
     ) -> LLMResponse:
         response = await self._complete_impl(
-            prompt, max_tokens, system_prompt=system_prompt, **kwargs
+            prompt, max_tokens, system_prompt=system_prompt, json_mode=json_mode, **kwargs
         )
         response.metadata.update(
             {

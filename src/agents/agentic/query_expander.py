@@ -26,7 +26,7 @@ class QueryExpander:
         ]
         """
 
-        response = await self.llm.complete(prompt, stage_tag="query_expander")
+        response = await self.llm.complete(prompt, stage_tag="query_expander", json_mode=True)
         alternatives = response.parsed_json
 
         all_queries = [query] + alternatives

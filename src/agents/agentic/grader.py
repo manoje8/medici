@@ -146,7 +146,7 @@ Return the JSON array only — no markdown fences, no extra text."""
 
         for attempt in range(_GRADE_MAX_RETRIES + 1):
             try:
-                response = await self.llm.complete(prompt, stage_tag="grader_batch")
+                response = await self.llm.complete(prompt, stage_tag="grader_batch", json_mode=True)
                 raw = response.parsed_json
 
                 # LLM may return a dict wrapper instead of a bare array.
@@ -263,7 +263,7 @@ Respond with JSON only:
 """
         for attempt in range(_GRADE_MAX_RETRIES + 1):
             try:
-                result = await self.llm.complete(prompt, stage_tag="grader_chunk")
+                result = await self.llm.complete(prompt, stage_tag="grader_chunk", json_mode=True)
                 grade = result.parsed_json
 
                 if "relevant" not in grade:
@@ -347,7 +347,7 @@ Return JSON: {{"covered_indices": [0, 2, 3]}}
 Only include indices that have sufficient information.
 """
         try:
-            result = await self.llm.complete(prompt, stage_tag="grader_coverage")
+            result = await self.llm.complete(prompt, stage_tag="grader_coverage", json_mode=True)
             data = result.parsed_json
             return set(data.get("covered_indices", []))
         except Exception:
@@ -432,7 +432,9 @@ Return JSON:
 
 """
         try:
-            result = await self.llm.complete(prompt, stage_tag="grader_completeness")
+            result = await self.llm.complete(
+                prompt, stage_tag="grader_completeness", json_mode=True
+            )
             data = result.parsed_json
 
             return {

@@ -163,7 +163,7 @@ Respond with EXACTLY this JSON format:
 """
         with logfire.span("classify_query", prompt_length=len(prompt)) as span:
             try:
-                response = await self.llm.complete(prompt, stage_tag="router")
+                response = await self.llm.complete(prompt, stage_tag="router", json_mode=True)
                 parsed_data = self._parse_and_validate_response(response)
                 result = self._apply_fallback_strategy(result=parsed_data)
 

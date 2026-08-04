@@ -33,6 +33,8 @@ class GeminiClient(BaseLLM):
         }
         if system_prompt:
             generate_config_kwargs["system_instruction"] = system_prompt
+        if kwargs.get("json_mode", False):
+            generate_config_kwargs["response_mime_type"] = "application/json"
 
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(

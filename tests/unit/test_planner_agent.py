@@ -83,6 +83,8 @@ class TestPlanNextHop:
             "query": None,
             "reasoning": "All info found",
         }
+
+        mock_response.try_parsed_json.return_value = mock_response.parsed_json
         mock_llm.complete.return_value = mock_response
 
         result = await planner.plan_next_hop(
@@ -101,6 +103,7 @@ class TestPlanNextHop:
             "query": "better phrasing of same question",
             "reasoning": "Poor retrieval quality",
         }
+        mock_response.try_parsed_json.return_value = mock_response.parsed_json
         mock_llm.complete.return_value = mock_response
 
         result = await planner.plan_next_hop(
@@ -119,6 +122,7 @@ class TestPlanNextHop:
             "query": "what about the missing aspect?",
             "reasoning": "Gap in coverage",
         }
+        mock_response.try_parsed_json.return_value = mock_response.parsed_json
         mock_llm.complete.return_value = mock_response
 
         result = await planner.plan_next_hop(

@@ -22,11 +22,12 @@ class FallbackClient(BaseLLM):
         max_tokens: int = 1024,
         stage_tag: str = "unknown",
         system_prompt: str | None = None,
+        json_mode: bool = False,
         **kwargs,
     ) -> LLMResponse:
         try:
             return await self.primary.complete(
-                prompt, max_tokens, stage_tag, system_prompt, **kwargs
+                prompt, max_tokens, stage_tag, system_prompt, json_mode=json_mode, **kwargs
             )
         except Exception as e:
             logfire.warning(
@@ -34,7 +35,7 @@ class FallbackClient(BaseLLM):
                 f"Falling back to {self.fallback.model_name}."
             )
             return await self.fallback.complete(
-                prompt, max_tokens, stage_tag, system_prompt, **kwargs
+                prompt, max_tokens, stage_tag, system_prompt, json_mode=json_mode, **kwargs
             )
 
     async def stream_complete(

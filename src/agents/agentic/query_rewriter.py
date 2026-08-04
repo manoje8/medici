@@ -42,7 +42,7 @@ class QueryRewriter:
                 }}
                 """
 
-        response = await self.llm.complete(prompt, stage_tag="rewriter")
+        response = await self.llm.complete(prompt, stage_tag="rewriter", json_mode=True)
         result = response.parsed_json
 
         if result["was_rewritten"]:
