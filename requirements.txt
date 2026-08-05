@@ -67,3 +67,5 @@ bcrypt
 pyjwt
 sentence-transformers
 nltk
+transformers
+torch

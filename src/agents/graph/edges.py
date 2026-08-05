@@ -96,3 +96,47 @@ def route_after_grade(state: State) -> str:
         return "rewrite_for_refinement"
 
     return "synthesize"
+
+
+def route_after_faithfulness(state: State) -> str:
+    """
+    Route from the ``faithfulness_check`` node to the terminal ``END``.
+
+    Gate decision
+    -------------
+    - ``skipped=True``          → the answer came from a no-retrieval path
+      (chitchat, simple response, …).  Pass straight through.
+    - ``faithfulness_passed``   → score met or exceeded the configured
+      threshold.  Answer is clean — route to END.
+    - ``not faithfulness_passed`` → score below threshold.  The final_answer
+      is annotated in-state with a low-confidence prefix so the client can
+      surface a disclaimer.  Still routes to END (soft-fail) to avoid
+      silently dropping responses.
+
+    Routing targets
+    ---------------
+    Both branches currently terminate at ``END``.  The distinction is kept
+    as separate symbolic names (``"pass"`` / ``"fail_soft"``) so the graph
+    can be extended later to add a hard-fail branch (e.g. re-synthesize or
+    return a canned response) without changing the edge function signature.
+    """
+    skipped: bool = state.get("faithfulness_skipped", False)
+    passed: bool = state.get("faithfulness_passed", True)
+    score: float = state.get("faithfulness_score", 1.0)
+
+    logfire.debug(
+        "route_after_faithfulness",
+        skipped=skipped,
+        passed=passed,
+        score=score,
+    )
+
+    if skipped or passed:
+        return "pass"
+
+    logfire.warning(
+        "faithfulness_gate_failed",
+        score=score,
+        action="soft_fail_with_annotation",
+    )
+    return "fail_soft"

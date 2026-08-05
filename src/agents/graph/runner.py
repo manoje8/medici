@@ -160,6 +160,11 @@ class GraphPipeline:
             "retrieval_hops": result.get("current_hop", 0),
             "cache_hit": False,
             "token_usage": token_usage,
+            "faithfulness": {
+                "score": result.get("faithfulness_score"),
+                "passed": result.get("faithfulness_passed"),
+                "skipped": result.get("faithfulness_skipped"),
+            },
         }
 
     async def chat_stream(self, user_message: str, session_id: str, user_id: str):
@@ -395,4 +400,9 @@ class GraphPipeline:
             "query_was_rewritten": was_rewritten,
             "cache_hit": False,
             "token_usage": token_usage,
+            "faithfulness": {
+                "score": final_state.get("faithfulness_score"),
+                "passed": final_state.get("faithfulness_passed"),
+                "skipped": final_state.get("faithfulness_skipped"),
+            },
         }

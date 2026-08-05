@@ -110,5 +110,12 @@ class Config:
     MAX_UPLOAD_BYTES: int = int(os.getenv("MAX_UPLOAD_BYTES", 100_000_00))
     MIN_RERANK_SCORE = 0.1
 
+    # Post-synthesis faithfulness gate (NLI model)
+    FAITHFULNESS_ENABLED: bool = os.getenv("FAITHFULNESS_ENABLED", "true").lower() == "true"
+    FAITHFULNESS_THRESHOLD: float = float(os.getenv("FAITHFULNESS_THRESHOLD", "0.5"))
+    FAITHFULNESS_MODEL: str = os.getenv(
+        "FAITHFULNESS_MODEL", "vectara/hallucination_evaluation_model"
+    )
+
 
 config = Config()

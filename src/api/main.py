@@ -34,6 +34,7 @@ from src.common.cache.semantic_cache import SemanticQueryCache
 from src.common.llm.fallback import FallbackClient
 from src.common.llm.gemini import GeminiClient
 from src.common.llm.groq import GroqClient
+from src.common.services.faithfulness_checker import get_faithfulness_checker
 from src.common.services.hybrid_search import HybridSearch
 from src.common.services.qdrant import QdrantStorageService
 from src.common.services.reranker import Reranker
@@ -110,6 +111,18 @@ async def lifespan(app: FastAPI):
             query_expand=query_expander,
         )
 
+        # ── Faithfulness gate ────────────────────────────────────────────
+        faithfulness_checker = None
+        if config.FAITHFULNESS_ENABLED:
+            faithfulness_checker = get_faithfulness_checker(threshold=config.FAITHFULNESS_THRESHOLD)
+            logfire.info(
+                "FaithfulnessChecker enabled",
+                model="vectara/hallucination_evaluation_model",
+                threshold=config.FAITHFULNESS_THRESHOLD,
+            )
+        else:
+            logfire.info("FaithfulnessChecker disabled (FAITHFULNESS_ENABLED=false)")
+
         graph = await compile_graph_with_postgres(
             pool=pool,
             short_term=short_term,
@@ -119,6 +132,7 @@ async def lifespan(app: FastAPI):
             retrieval_agent=retrieval_agent,
             grader=GraderAgent(primary_groq_fallback_gemini),
             synthesizer=SynthesizerAgent(primary_groq_fallback_gemini),
+            faithfulness_checker=faithfulness_checker,
         )
 
         semantic_cache: SemanticQueryCache | None = None

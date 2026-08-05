@@ -2,6 +2,7 @@ import logfire
 
 from src.agents.graph.state import State
 from src.agents.retrieval import HIGH_CONFIDENCE_RRF_THRESHOLD
+from src.common.services.faithfulness_checker import FaithfulnessChecker
 
 _CHUNK_PREVIEW_MAX_CHARS = 300
 
@@ -249,4 +250,41 @@ async def rewrite_for_refinement(state: State) -> dict:
         "accepted_chunks": [],
         "retrieval_history": [],
         "hop_decision": "",
+    }
+
+
+async def faithfulness_check(state: State, checker: FaithfulnessChecker) -> dict:
+    """
+    Post-synthesis faithfulness gate.
+
+    Scores the ``final_answer`` against the ``accepted_chunks`` using the
+    Vectara hallucination evaluation NLI model.  Writes three fields back to
+    state:
+
+    ``faithfulness_score``
+        Float in [0, 1] — how well the answer is grounded in the retrieved
+        evidence.  Higher is better.
+
+    ``faithfulness_passed``
+        Boolean gate decision (``score >= threshold``).  The edge router uses
+        this to decide whether to surface the answer or a fallback.
+
+    ``faithfulness_skipped``
+        ``True`` when there is no answer or no evidence chunks (e.g. chitchat
+        paths), in which case the gate always passes.
+    """
+    result = await checker.check_from_state(state)
+
+    logfire.info(
+        "faithfulness_gate",
+        score=result["score"],
+        passed=result["passed"],
+        skipped=result.get("skipped", False),
+        threshold=result["threshold"],
+    )
+
+    return {
+        "faithfulness_score": result["score"],
+        "faithfulness_passed": result["passed"],
+        "faithfulness_skipped": result.get("skipped", False),
     }

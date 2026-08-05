@@ -39,3 +39,8 @@ class State(TypedDict):
     needs_refinement: bool
     refinement_loops: int
     skip_grading: bool
+
+    # post-synthesis faithfulness gate
+    faithfulness_score: float
+    faithfulness_passed: bool
+    faithfulness_skipped: bool

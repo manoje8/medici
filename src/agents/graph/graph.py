@@ -5,11 +5,13 @@ from langgraph.graph import END, StateGraph
 
 from src.agents.graph.edges import (
     route_after_classify,
+    route_after_faithfulness,
     route_after_grade,
     route_after_hop_check,
 )
 from src.agents.graph.nodes import (
     direct_synthesize,
+    faithfulness_check,
     grade,
     handle_simple_response,
     hop_check,
@@ -22,8 +24,36 @@ from src.agents.graph.nodes import (
 )
 from src.agents.graph.state import State
 
+_LOW_CONFIDENCE_PREFIX = (
+    "⚠️ *Low-confidence answer* — the response may not be fully grounded "
+    "in the retrieved documents.\n\n"
+)
 
-def build_rag_graph(short_term, rewriter, router, planner, retrieval_agent, grader, synthesizer):
+
+def _annotate_low_confidence(state: State) -> dict:
+    """
+    Soft-fail annotation node.
+
+    Prepends a disclaimer to the ``final_answer`` when the faithfulness gate
+    score falls below the configured threshold.  This keeps the graph from
+    silently dropping answers while still surfacing a client-visible signal.
+    """
+    answer = state.get("final_answer", "")
+    if not answer.startswith(_LOW_CONFIDENCE_PREFIX):
+        answer = _LOW_CONFIDENCE_PREFIX + answer
+    return {"final_answer": answer}
+
+
+def build_rag_graph(
+    short_term,
+    rewriter,
+    router,
+    planner,
+    retrieval_agent,
+    grader,
+    synthesizer,
+    faithfulness_checker=None,
+):
     builder = StateGraph(State)
 
     builder.add_node(
@@ -42,7 +72,14 @@ def build_rag_graph(short_term, rewriter, router, planner, retrieval_agent, grad
         partial(handle_simple_response, synthesizer=synthesizer),
     )
     builder.add_node("rewrite_for_refinement", partial(rewrite_for_refinement))
-    # Edges
+    builder.add_node("annotate_low_confidence", partial(_annotate_low_confidence))
+
+    if faithfulness_checker is not None:
+        builder.add_node(
+            "faithfulness_check",
+            partial(faithfulness_check, checker=faithfulness_checker),
+        )
+
     builder.set_entry_point("rewrite_query")
     builder.add_edge("rewrite_query", "route")
     builder.add_conditional_edges(
@@ -77,9 +114,25 @@ def build_rag_graph(short_term, rewriter, router, planner, retrieval_agent, grad
         },
     )
     builder.add_edge("rewrite_for_refinement", "retrieve")
-    builder.add_edge("direct_synthesize", END)
-    builder.add_edge("handle_simple_response", END)
-    builder.add_edge("synthesize", END)
+
+    if faithfulness_checker is not None:
+        builder.add_edge("synthesize", "faithfulness_check")
+        builder.add_edge("direct_synthesize", "faithfulness_check")
+        builder.add_edge("handle_simple_response", "faithfulness_check")
+
+        builder.add_conditional_edges(
+            "faithfulness_check",
+            route_after_faithfulness,
+            {
+                "pass": END,
+                "fail_soft": "annotate_low_confidence",
+            },
+        )
+        builder.add_edge("annotate_low_confidence", END)
+    else:
+        builder.add_edge("direct_synthesize", END)
+        builder.add_edge("handle_simple_response", END)
+        builder.add_edge("synthesize", END)
 
     return builder
 
