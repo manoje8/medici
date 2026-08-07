@@ -9,6 +9,7 @@ nest-asyncio
 streamlit
 rank_bm25
 
+openai
 google-genai
 cerebras_cloud_sdk
 

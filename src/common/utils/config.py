@@ -27,6 +27,9 @@ class Config:
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY")
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
 
+    NVIDIA_API_KEY: str = os.getenv("NVIDIA_API_KEY")
+    NVIDIA_MODEL: str = os.getenv("NVIDIA_MODEL", "llama-3.3-70b-instruct")
+
     CEREBRAS_API_KEY: str = os.getenv("CEREBRAS_API_KEY")
     CEREBRAS_MODEL: str = os.getenv("CEREBRAS_MODEL", "gpt-oss-120b")
 

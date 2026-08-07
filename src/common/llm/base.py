@@ -161,7 +161,7 @@ class BaseLLM(ABC):
 
     @abstractmethod
     async def _complete_impl(
-        self, prompt: str, max_token: int, system_prompt: str | None = None, **kwargs
+        self, prompt: str, max_tokens: int, system_prompt: str | None = None, **kwargs
     ) -> LLMResponse:
         pass
 
