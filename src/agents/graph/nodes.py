@@ -1,7 +1,7 @@
 import logfire
 
+from src.agents.adaptive_retrieval import AdaptiveRetrievalConfig
 from src.agents.graph.state import State
-from src.agents.retrieval import HIGH_CONFIDENCE_RRF_THRESHOLD
 from src.common.services.faithfulness_checker import FaithfulnessChecker
 
 _CHUNK_PREVIEW_MAX_CHARS = 300
@@ -13,7 +13,7 @@ def _build_structured_chunk_previews(chunks: list[dict]) -> str:
 
     Each chunk is truncated to ``_CHUNK_PREVIEW_MAX_CHARS`` and tagged
     with source/section metadata so the LLM can assess coverage without
-    an expensive summarisation step.
+    an expensive summarization step.
     """
     if not chunks:
         return "(no chunks retrieved yet)"
@@ -68,6 +68,7 @@ async def plan(state: State, planner) -> dict:
 
 # Retrieve & evaluate
 async def retrieve(state: State, retrieval_agent) -> dict:
+    adaptive_config = AdaptiveRetrievalConfig.from_state(state)
     current_query = state["current_query"]
     hop_questions = state.get("hop_questions", [])
     # Use the last hop question as the "original question" for reranking
@@ -84,7 +85,7 @@ async def retrieve(state: State, retrieval_agent) -> dict:
     top_score = (
         round_result.chunk_retrieved[0].get("score", 0.0) if round_result.chunk_retrieved else 0.0
     )
-    skip_grading = is_factual and top_score > HIGH_CONFIDENCE_RRF_THRESHOLD
+    skip_grading = is_factual and top_score > adaptive_config.confidence_threshold
 
     return {
         "retrieval_history": state["retrieval_history"]
@@ -100,6 +101,7 @@ async def retrieve(state: State, retrieval_agent) -> dict:
         "retrieval_round": state["retrieval_round"] + 1,
         "total_retrieval_steps": state.get("total_retrieval_steps", 0) + 1,
         "skip_grading": skip_grading,
+        "max_hops": adaptive_config.max_hops,
     }
 
 

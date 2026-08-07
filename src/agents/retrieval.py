@@ -1,11 +1,11 @@
 import logfire
 
+from src.agents.adaptive_retrieval import AdaptiveRetrievalConfig
 from src.agents.agent_model import RetrievalDecision, RetrievalRound
 from src.agents.agentic.query_expander import QueryExpander
 from src.agents.graph.state import State
 from src.common.services.hybrid_search import HybridSearch
 from src.common.services.reranker import Reranker
-from src.common.utils.config import config
 
 HIGH_CONFIDENCE_RRF_THRESHOLD = 0.85
 
@@ -73,40 +73,60 @@ Use "exhausted" if the information is likely not in this document.
         round_no: int = 0,
         use_expansion: bool = True,
         use_rerank: bool = True,
+        adaptive_config: AdaptiveRetrievalConfig | None = None,
     ) -> list[dict]:
-        if round_no == 0 and use_expansion:
-            expanded_queries = await self.query_expand.expand(query)
-        else:
-            expanded_queries = [query]
-            logfire.debug("using_original_query_for_subsequent_round", round_no=round_no)
+        original_search_top_k = self.hybrid_search.top_k
+        original_rerank_top_k = self.reranker.top_k
 
-        with logfire.span("hybrid_search", num_queries=len(expanded_queries)):
-            candidates = await self.hybrid_search.search(
-                queries=expanded_queries, doc_id_filter=doc_id_filter
-            )
-
-        if not use_rerank:
-            return candidates[: self.reranker.top_k]
-
-        with logfire.span("reranking", num_candidates=len(candidates)):
-            rerank_results = await self.reranker.rerank(
-                query=original_question, candidates=candidates
-            )
-
+        if adaptive_config is not None:
+            self.hybrid_search.top_k = adaptive_config.top_k_search
+            self.reranker.top_k = adaptive_config.top_k_rerank
+            use_rerank = adaptive_config.use_reranking
             logfire.debug(
-                "reranking_complete",
-                num_results=len(rerank_results),
-                top_score=(rerank_results[0].get("score", 0.0) if rerank_results else None),
+                "adaptive_retrieval_overrides_applied",
+                search_top_k=adaptive_config.top_k_search,
+                rerank_top_k=adaptive_config.top_k_rerank,
+                use_reranking=use_rerank,
             )
 
-        return rerank_results
+        try:
+            if round_no == 0 and use_expansion:
+                expanded_queries = await self.query_expand.expand(query)
+            else:
+                expanded_queries = [query]
+                logfire.debug("using_original_query_for_subsequent_round", round_no=round_no)
+
+            with logfire.span("hybrid_search", num_queries=len(expanded_queries)):
+                candidates = await self.hybrid_search.search(
+                    queries=expanded_queries, doc_id_filter=doc_id_filter
+                )
+
+            if not use_rerank:
+                return candidates[: self.reranker.top_k]
+
+            with logfire.span("reranking", num_candidates=len(candidates)):
+                rerank_results = await self.reranker.rerank(
+                    query=original_question, candidates=candidates
+                )
+
+                logfire.debug(
+                    "reranking_complete",
+                    num_results=len(rerank_results),
+                    top_score=(rerank_results[0].get("score", 0.0) if rerank_results else None),
+                )
+
+            return rerank_results
+        finally:
+            self.hybrid_search.top_k = original_search_top_k
+            self.reranker.top_k = original_rerank_top_k
 
     async def retrieve_and_evaluate(
         self, query: str, original_question: str, state: State, round_no: int = 0
     ) -> RetrievalRound:
 
+        adaptive_config = AdaptiveRetrievalConfig.from_state(state)
         question_category = state.get("question_category", "factual").lower()
-        use_expansion = question_category not in config.SKIP_EXPANSION_CATEGORIES
+        use_expansion = adaptive_config.use_query_expansion
 
         logfire.info(
             "retrieval_round_start",
@@ -114,6 +134,11 @@ Use "exhausted" if the information is likely not in this document.
             query=query,
             question_category=question_category,
             use_expansion=use_expansion,
+            adaptive_top_k_search=adaptive_config.top_k_search,
+            adaptive_top_k_rerank=adaptive_config.top_k_rerank,
+            adaptive_max_hops=adaptive_config.max_hops,
+            adaptive_confidence_threshold=adaptive_config.confidence_threshold,
+            chunking_preference=adaptive_config.chunking_preference,
             original_question=(
                 original_question[:100] + "..."
                 if len(original_question) > 100
@@ -123,7 +148,7 @@ Use "exhausted" if the information is likely not in this document.
         if not use_expansion:
             logfire.debug(
                 "query_expansion_skipped",
-                reason=f"category '{question_category}' is in SKIP_EXPANSION_CATEGORIES",
+                reason=f"adaptive config disabled expansion for category '{question_category}'",
                 round_no=round_no,
             )
 
@@ -133,6 +158,7 @@ Use "exhausted" if the information is likely not in this document.
             state["doc_id_filter"],
             round_no=round_no,
             use_expansion=use_expansion,
+            adaptive_config=adaptive_config,
         )
 
         if not results:
@@ -151,12 +177,12 @@ Use "exhausted" if the information is likely not in this document.
             )
 
         top_score = results[0].get("score", 0.0)
-        is_factual = state.get("question_category", "factual").lower() == "factual"
-        if is_factual and top_score > HIGH_CONFIDENCE_RRF_THRESHOLD:
+        is_factual = question_category == "factual"
+        if is_factual and top_score > adaptive_config.confidence_threshold:
             logfire.info(
                 "high_confidence_retrieval_skipping_evaluator",
                 top_score=top_score,
-                threshold=HIGH_CONFIDENCE_RRF_THRESHOLD,
+                threshold=adaptive_config.confidence_threshold,
                 num_results=len(results),
                 round_no=round_no,
                 query=query,
@@ -166,7 +192,7 @@ Use "exhausted" if the information is likely not in this document.
                 chunk_retrieved=results,
                 relevance_score=[r["score"] for r in results],
                 decision=RetrievalDecision.SUFFICIENT,
-                reasoning=f"Top rerank score {top_score:.2f} exceeded confidence threshold",
+                reasoning=f"Top rerank score {top_score:.2f} exceeded adaptive confidence threshold {adaptive_config.confidence_threshold}",
             )
 
         logfire.debug(
