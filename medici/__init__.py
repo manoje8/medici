@@ -5,7 +5,7 @@ Silence noisy `transformers` informational messages about
 This runs early on import for any module under `medici`.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.5.0"
 __all__ = ["__version__"]
 
 import logging as _logging
