@@ -66,3 +66,4 @@ data
 tests/eval/eval_results.json
 .doc_cache/
 .eval_history/
+medici_rag_platform_audit.md
