@@ -33,6 +33,8 @@ dependencies = [
     "rank-bm25",
     "nest-asyncio",
     "ascii-colors",
+    "logfire",
+    "tiktoken",
 
     # LLM
     "openai",
@@ -113,7 +115,7 @@ test = ["pytest", "pytest-asyncio"]
 eval = ["medici[test]"]
 
 all = [
-    "medici[api,ui,gcp,groq,cerebras,docling,documents,graph,observability]",
+    "medici[api,ui,gcp,groq,cerebras,docling,documents,graph,observability,test]",
 ]
 
 [project.urls]

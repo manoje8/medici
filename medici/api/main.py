@@ -33,8 +33,7 @@ from medici.api.routers.query_router import create_query_routes
 from medici.common.cache.embedding_cache import EmbeddingCache
 from medici.common.cache.semantic_cache import SemanticQueryCache
 from medici.common.llm.fallback import FallbackClient
-from medici.common.llm.gemini import GeminiClient
-from medici.common.llm.groq import GroqClient
+from medici.common.llm.llm_factory import LLMFactory
 from medici.common.services.faithfulness_checker import get_faithfulness_checker
 from medici.common.services.hybrid_search import HybridSearch
 from medici.common.services.qdrant import QdrantStorageService
@@ -65,8 +64,8 @@ async def lifespan(app: FastAPI):
         await asyncio.wait_for(pool.wait(), timeout=10)
         closers.append(("postgres pool", pool.close))
 
-        gemini_client = GeminiClient(timeout_seconds=30, max_retries=2, model=config.GEMINI_MODEL)
-        groq_client = GroqClient(timeout_seconds=30, max_retries=2, model=config.GROQ_MODEL)
+        gemini_client = LLMFactory.create("gemini", timeout_seconds=30, max_retries=2)
+        groq_client = LLMFactory.create("groq", timeout_seconds=30, max_retries=2)
 
         primary_groq_fallback_gemini = FallbackClient(primary=groq_client, fallback=gemini_client)
         primary_gemini_fallback_groq = FallbackClient(primary=gemini_client, fallback=groq_client)

@@ -45,6 +45,20 @@ class Tokenizer:
 
 
 class TikTokenTokenizer(Tokenizer):
+    """Token counter using OpenAI's tiktoken library.
+
+    The default model (``gpt-4o-mini`` / cl100k_base encoding) is used as a
+    **universal approximation** for token budgets, regardless of which LLM
+    provider is actually serving requests.  This is a deliberate trade-off:
+
+    * tiktoken is fast, deterministic, and works offline.
+    * cl100k_base gives counts within ~10-30 % of most modern LLM tokenizers,
+      which is accurate enough for chunk sizing and context-window guards —
+      especially given the safety margin provided by ``MAX_PROMPT_OVERHEAD_TOKENS``.
+    * Calling the real provider tokenizer for every chunk/budget check would
+      add latency and external dependencies to the hot path.
+    """
+
     def __init__(self, model_name: str = "gpt-4o-mini"):
         try:
             import tiktoken

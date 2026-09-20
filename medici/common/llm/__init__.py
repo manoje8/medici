@@ -9,6 +9,7 @@ from medici.common.llm.fallback import (
 )
 from medici.common.llm.gemini import GeminiClient
 from medici.common.llm.groq import GroqClient
+from medici.common.llm.llm_factory import LLMFactory, LLMProvider
 from medici.common.llm.nvidia import NvidiaClient
 
 __all__ = [
@@ -21,4 +22,6 @@ __all__ = [
     "FallbackClient",
     "MidStreamFallbackError",
     "STREAM_BREAK_SENTINEL",
+    "LLMFactory",
+    "LLMProvider",
 ]
