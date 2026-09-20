@@ -17,10 +17,13 @@ class GraphPipeline:
         self._semantic_cache = semantic_cache
         self._llm_clients: list = llm_clients or []
 
-    async def chat(self, user_message: str, session_id: str, user_id: str) -> dict:
+    async def _init_session(
+        self, session_id: str, user_id: str, user_message: str
+    ) -> tuple[ConversationSession, list[dict]]:
+        """Resolve (or create) a session, record the user turn, and reset
+        all LLM client usage counters.
 
-        result = {}
-
+        Returns ``(session, history)``."""
         if not session_id:
             logfire.info("Creating new session...")
             session_id = f"{user_id}_{uuid.uuid4()}"
@@ -40,37 +43,56 @@ class GraphPipeline:
         for client in self._llm_clients:
             client.reset_usage()
 
-        if self._semantic_cache is not None:
-            try:
-                cached = await self._semantic_cache.lookup(user_message)
-                if cached is not None:
-                    logfire.info(
-                        "SemanticCache served response",
-                        similarity=cached.similarity,
-                        session_id=session.session_id,
-                    )
-                    await self.short_term.append_turn(
-                        session=session,
-                        role="assistant",
-                        content=cached.answer,
-                        metadata={"sources": cached.sources},
-                    )
-                    return {
-                        "answer": cached.answer,
-                        "session_id": session.session_id,
-                        "sources": cached.sources,
-                        "query_was_rewritten": False,
-                        "retrieval_rounds": 0,
-                        "cache_hit": True,
-                        "cache_similarity": round(cached.similarity, 4),
-                        "token_usage": cached.token_usage,
-                    }
-            except Exception as e:
-                logfire.warning(f"SemanticCache lookup failed, running full pipeline: {e}")
+        return session, history
 
-        graph_config = {"configurable": {"thread_id": session.session_id}}
+    async def _check_cache(self, user_message: str, session: ConversationSession) -> dict | None:
+        """Attempt a semantic-cache lookup.
 
-        initial_state = {
+        On a hit, appends the assistant turn and returns a response dict
+        that both ``chat()`` and ``chat_stream()`` can use directly.
+        Returns ``None`` on miss or when caching is disabled."""
+        if self._semantic_cache is None:
+            return None
+
+        try:
+            cached = await self._semantic_cache.lookup(user_message)
+            if cached is None:
+                return None
+
+            logfire.info(
+                "SemanticCache served response",
+                similarity=cached.similarity,
+                session_id=session.session_id,
+            )
+            await self.short_term.append_turn(
+                session=session,
+                role="assistant",
+                content=cached.answer,
+                metadata={"sources": cached.sources},
+            )
+            return {
+                "answer": cached.answer,
+                "session_id": session.session_id,
+                "sources": cached.sources,
+                "query_was_rewritten": False,
+                "retrieval_rounds": 0,
+                "cache_hit": True,
+                "cache_similarity": round(cached.similarity, 4),
+                "token_usage": cached.token_usage,
+            }
+        except Exception as e:
+            logfire.warning(f"SemanticCache lookup failed, running full pipeline: {e}")
+            return None
+
+    def _build_initial_state(
+        self,
+        session: ConversationSession,
+        user_id: str,
+        user_message: str,
+        history: list[dict],
+    ) -> dict:
+        """Build the graph initial-state dict."""
+        return {
             "session_id": session.session_id,
             "user_id": user_id,
             "original_message": user_message,
@@ -95,6 +117,91 @@ class GraphPipeline:
             "episodic_context": "",
         }
 
+    def _collect_usage(
+        self, session_id: str, *, label: str = "pipeline_token_budget"
+    ) -> tuple[dict, int, int]:
+        """
+        Aggregate token-usage snapshots from all LLM clients.
+
+        Returns ``(token_usage_by_model, total_calls, total_tokens)``.
+        """
+        token_usage: dict = {}
+        total_calls = 0
+        total_tokens = 0
+        for client in self._llm_clients:
+            snap = client.usage_snapshot()
+            token_usage[snap["model"]] = snap
+            total_calls += snap["calls"]
+            total_tokens += snap["total_tokens"]
+
+        logfire.info(
+            label,
+            total_calls=total_calls,
+            total_tokens=total_tokens,
+            breakdown=token_usage,
+            session_id=session_id,
+        )
+        return token_usage, total_calls, total_tokens
+
+    async def _maybe_store_cache(
+        self,
+        user_message: str,
+        answer: str,
+        sources: list,
+        category: str,
+        total_calls: int,
+        total_tokens: int,
+    ) -> None:
+        """Store the response in the semantic cache if caching is enabled
+        and the question category is cacheable."""
+        if self._semantic_cache is None or not answer:
+            return
+
+        if category in _UNCACHEABLE_CATEGORIES:
+            logfire.info(
+                "SemanticCache store skipped (uncacheable category)",
+                category=category,
+            )
+            return
+
+        try:
+            await self._semantic_cache.store(
+                query=user_message,
+                answer=answer,
+                sources=sources,
+                token_usage={"total_calls": total_calls, "total_tokens": total_tokens},
+            )
+        except Exception as e:
+            logfire.warning(f"SemanticCache store failed: {e}")
+
+    async def _save_assistant_turn(
+        self,
+        session: ConversationSession,
+        answer: str,
+        sources: list,
+    ) -> None:
+        """Append the assistant reply to short-term memory."""
+        if answer:
+            await self.short_term.append_turn(
+                session=session,
+                role="assistant",
+                content=answer,
+                metadata={"sources": sources},
+            )
+
+    async def chat(self, user_message: str, session_id: str, user_id: str) -> dict:
+
+        session, history = await self._init_session(session_id, user_id, user_message)
+
+        # semantic cache fast-path
+        cached_response = await self._check_cache(user_message, session)
+        if cached_response is not None:
+            return cached_response
+
+        # graph execution
+        graph_config = {"configurable": {"thread_id": session.session_id}}
+        initial_state = self._build_initial_state(session, user_id, user_message, history)
+
         try:
             result = await self.graph.ainvoke(initial_state, config=graph_config)
         except Exception as e:
@@ -110,47 +217,21 @@ class GraphPipeline:
                 "error": str(e),
             }
 
-        token_usage = {}
-        total_calls = 0
-        total_tokens = 0
-        for client in self._llm_clients:
-            snap = client.usage_snapshot()
-            token_usage[snap["model"]] = snap
-            total_calls += snap["calls"]
-            total_tokens += snap["total_tokens"]
+        # post-processing
+        token_usage, total_calls, total_tokens = self._collect_usage(
+            session.session_id, label="pipeline_token_budget"
+        )
 
-        logfire.info(
-            "pipeline_token_budget",
+        await self._save_assistant_turn(session, result["final_answer"], result.get("sources", []))
+
+        await self._maybe_store_cache(
+            user_message=user_message,
+            answer=result["final_answer"],
+            sources=result.get("sources", []),
+            category=result.get("question_category", "").lower(),
             total_calls=total_calls,
             total_tokens=total_tokens,
-            breakdown=token_usage,
-            session_id=session.session_id,
         )
-
-        await self.short_term.append_turn(
-            session=session,
-            role="assistant",
-            content=result["final_answer"],
-            metadata={"sources": result.get("sources", [])},
-        )
-
-        if self._semantic_cache is not None:
-            category = result.get("question_category", "").lower()
-            if category not in _UNCACHEABLE_CATEGORIES:
-                try:
-                    await self._semantic_cache.store(
-                        query=user_message,
-                        answer=result["final_answer"],
-                        sources=result.get("sources", []),
-                        token_usage={"total_calls": total_calls, "total_tokens": total_tokens},
-                    )
-                except Exception as e:
-                    logfire.warning(f"SemanticCache store failed: {e}")
-            else:
-                logfire.info(
-                    "SemanticCache store skipped (uncacheable category)",
-                    category=category,
-                )
 
         return {
             "answer": result["final_answer"],
@@ -200,58 +281,16 @@ class GraphPipeline:
         3. Semantic cache hit-path returns immediately as a single
            ``done`` event (no tokens to stream).
         """
-        import uuid as _uuid
 
-        from medici.common.utils.config import config as _cfg
+        session, history = await self._init_session(session_id, user_id, user_message)
 
-        if not session_id:
-            logfire.info("Creating new session (stream)...")
-            session_id = f"{user_id}_{_uuid.uuid4()}"
+        # semantic cache fast-path
+        cached_response = await self._check_cache(user_message, session)
+        if cached_response is not None:
+            yield {"type": "done", **cached_response}
+            return
 
-        session = await self.short_term.get_session(session_id)
-        if not session:
-            session = await self.short_term.create_session(user_id, session_id=session_id)
-
-        history = session.to_history_dicts()
-
-        await self.short_term.append_turn(
-            session=session,
-            role="user",
-            content=user_message,
-        )
-
-        for client in self._llm_clients:
-            client.reset_usage()
-
-        if self._semantic_cache is not None:
-            try:
-                cached = await self._semantic_cache.lookup(user_message)
-                if cached is not None:
-                    logfire.info(
-                        "SemanticCache served response (stream)",
-                        similarity=cached.similarity,
-                        session_id=session.session_id,
-                    )
-                    await self.short_term.append_turn(
-                        session=session,
-                        role="assistant",
-                        content=cached.answer,
-                        metadata={"sources": cached.sources},
-                    )
-                    yield {
-                        "type": "done",
-                        "answer": cached.answer,
-                        "session_id": session.session_id,
-                        "sources": cached.sources,
-                        "query_was_rewritten": False,
-                        "cache_hit": True,
-                        "cache_similarity": round(cached.similarity, 4),
-                        "token_usage": cached.token_usage,
-                    }
-                    return
-            except Exception as e:
-                logfire.warning(f"SemanticCache lookup failed (stream): {e}")
-
+        # graph execution (streaming)
         _NODE_LABELS: dict[str, str] = {
             "rewrite_query": "Rewriting query",
             "route": "Classifying question",
@@ -266,31 +305,7 @@ class GraphPipeline:
         }
 
         graph_config = {"configurable": {"thread_id": session.session_id}}
-
-        initial_state = {
-            "session_id": session.session_id,
-            "user_id": user_id,
-            "original_message": user_message,
-            "effective_query": user_message,
-            "was_rewritten": False,
-            "conversational_history": history,
-            "question_category": "",
-            "hop_questions": [],
-            "current_hop": 0,
-            "max_hops": _cfg.MAX_HOPS,
-            "current_query": user_message,
-            "retrieval_round": 0,
-            "total_retrieval_steps": 0,
-            "max_retrieval_rounds": _cfg.MAX_RETRIEVAL_ROUND,
-            "retrieval_history": [],
-            "accepted_chunks": [],
-            "hop_decision": "",
-            "final_answer": "",
-            "sources": [],
-            "images": [],
-            "doc_id_filter": None,
-            "episodic_context": "",
-        }
+        initial_state = self._build_initial_state(session, user_id, user_message, history)
 
         final_state: dict = {}
         try:
@@ -371,46 +386,21 @@ class GraphPipeline:
             else:
                 answer = final_state.get("final_answer", "")
 
-        if answer:
-            await self.short_term.append_turn(
-                session=session,
-                role="assistant",
-                content=answer,
-                metadata={"sources": sources},
-            )
+        # post-processing (shared helpers)
+        await self._save_assistant_turn(session, answer, sources)
 
-        token_usage: dict = {}
-        total_calls = 0
-        total_tokens = 0
-        for client in self._llm_clients:
-            snap = client.usage_snapshot()
-            token_usage[snap["model"]] = snap
-            total_calls += snap["calls"]
-            total_tokens += snap["total_tokens"]
-
-        logfire.info(
-            "pipeline_stream_token_budget",
-            total_calls=total_calls,
-            total_tokens=total_tokens,
-            session_id=session.session_id,
+        token_usage, total_calls, total_tokens = self._collect_usage(
+            session.session_id, label="pipeline_stream_token_budget"
         )
 
-        category = final_state.get("question_category", "").lower()
-        if self._semantic_cache is not None and answer and category not in _UNCACHEABLE_CATEGORIES:
-            try:
-                await self._semantic_cache.store(
-                    query=user_message,
-                    answer=answer,
-                    sources=sources,
-                    token_usage={"total_calls": total_calls, "total_tokens": total_tokens},
-                )
-            except Exception as e:
-                logfire.warning(f"SemanticCache store failed (stream): {e}")
-        elif self._semantic_cache is not None and answer:
-            logfire.info(
-                "SemanticCache store skipped (uncacheable category, stream)",
-                category=category,
-            )
+        await self._maybe_store_cache(
+            user_message=user_message,
+            answer=answer,
+            sources=sources,
+            category=final_state.get("question_category", "").lower(),
+            total_calls=total_calls,
+            total_tokens=total_tokens,
+        )
 
         yield {
             "type": "done",
