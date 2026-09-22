@@ -6,9 +6,9 @@ interface SourceCardProps {
 
 export function SourceCard({ citation }: SourceCardProps) {
   return (
-    <div className="glass rounded-xl px-4 py-3 hover:border-primary/30 hover:shadow-glow transition-all duration-200 group">
+    <div className="glass rounded-xl px-4 py-3 hover:border-primary-light hover:shadow-glow transition-all duration-200 group">
       <div className="flex items-center gap-2">
-        <span className="shrink-0 h-5 w-5 rounded-full bg-primary/20 text-primary-light text-[10px] font-bold flex items-center justify-center">
+        <span className="shrink-0 h-5 w-5 rounded-full bg-primary-glow text-primary-light text-[10px] font-bold flex items-center justify-center">
           {citation.index}
         </span>
 
@@ -16,7 +16,7 @@ export function SourceCard({ citation }: SourceCardProps) {
           {citation.filename}
         </span>
 
-        <span className="text-[10px] font-medium text-primary-light/70 bg-primary/10 px-2 py-0.5 rounded-md shrink-0">
+        <span className="text-[10px] font-medium text-text-muted bg-primary-glow px-2 py-0.5 rounded-md shrink-0">
           § {citation.section}
         </span>
       </div>

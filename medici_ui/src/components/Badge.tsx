@@ -9,7 +9,7 @@ interface BadgeProps {
 
 const variantClasses: Record<NonNullable<BadgeProps['variant']>, string> = {
   primary:
-    'bg-primary/15 text-primary-light border border-primary/30',
+    'bg-primary-glow text-primary-light border border-primary-light',
   success:
     'bg-success-bg text-success border border-success-border',
   warning:
@@ -17,7 +17,7 @@ const variantClasses: Record<NonNullable<BadgeProps['variant']>, string> = {
   error:
     'bg-error-bg text-error border border-error-border',
   info:
-    'bg-primary/15 text-accent-light border border-primary/30',
+    'bg-primary-glow text-accent-light border border-primary-light',
 };
 
 export function Badge({ variant = 'primary', children, className }: BadgeProps) {

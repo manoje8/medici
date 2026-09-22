@@ -22,10 +22,10 @@ const icons = {
 };
 
 const colorClasses = {
-  success: 'border-success/40 text-success',
-  error: 'border-error/40 text-error',
-  warning: 'border-warning/40 text-warning',
-  info: 'border-primary/40 text-primary-light',
+  success: 'border-success-border text-success',
+  error: 'border-error-border text-error',
+  warning: 'border-warning-border text-warning',
+  info: 'border-primary-light text-primary-light',
 };
 
 export function Toast({ toast, onDismiss }: ToastProps) {

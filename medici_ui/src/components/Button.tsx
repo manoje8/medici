@@ -14,9 +14,9 @@ const variantClasses: Record<NonNullable<ButtonProps['variant']>, string> = {
   secondary:
     'bg-surface-700 hover:bg-surface-600 text-text-primary border border-glass-border',
   ghost:
-    'bg-transparent hover:bg-surface-700/50 text-text-secondary hover:text-text-primary',
+    'bg-transparent hover:bg-surface-600 text-text-secondary hover:text-text-primary',
   danger:
-    'bg-error-bg hover:bg-error/20 text-error border border-error-border',
+    'bg-error-bg hover:bg-error-bg text-error border border-error-border',
 };
 
 const sizeClasses: Record<NonNullable<ButtonProps['size']>, string> = {
@@ -38,7 +38,7 @@ export function Button({
     <button
       className={clsx(
         'inline-flex items-center justify-center gap-2 font-semibold transition-all duration-200 cursor-pointer',
-        'focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 focus:ring-offset-surface-900',
+        'focus:outline-none focus:ring-2 focus:ring-primary-light focus:ring-offset-2 focus:ring-offset-surface-900',
         'disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none',
         variantClasses[variant],
         sizeClasses[size],

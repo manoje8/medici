@@ -27,20 +27,20 @@ export function ChatPage() {
           >
             <Menu className="h-5 w-5" />
           </button>
-          <h1 className="text-sm font-semibold text-text-primary">Medici 🤖</h1>
+          <h1 className="text-sm font-semibold text-text-primary">Medici</h1>
         </div>
 
         <HealthBanner isHealthy={isHealthy} />
 
         <div className="flex-1 overflow-y-auto">
-          <div className="max-w-4xl mx-auto w-full">
+          <div className="max-w-5xl mx-auto w-full">
             <MessageList />
             {isStreaming && <StreamingAnswer />}
           </div>
         </div>
 
-        <div className="border-t border-glass-border bg-surface-900/80 backdrop-blur-sm">
-          <div className="max-w-4xl mx-auto w-full">
+        <div className="border-t border-glass-border bg-surface-900 backdrop-blur-sm">
+          <div className="max-w-5xl mx-auto w-full">
             <ChatInput />
           </div>
         </div>

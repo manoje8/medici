@@ -24,7 +24,7 @@ export function DebugPanel() {
       </button>
 
       {isOpen && (
-        <div className="mt-2 animate-[fade-in_0.2s_ease-out] bg-surface-900/50 rounded-lg p-3 text-xs font-mono space-y-1.5">
+        <div className="mt-2 animate-[fade-in_0.2s_ease-out] bg-surface-800 rounded-lg p-3 text-xs font-mono space-y-1.5">
           <div className="flex justify-between">
             <span className="text-text-muted">session_id</span>
             <span className="text-primary-light">{truncateId(sessionId)}</span>

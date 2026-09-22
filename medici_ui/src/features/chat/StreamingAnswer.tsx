@@ -42,9 +42,9 @@ export function StreamingAnswer() {
           {!streamingTokens && pipelineStages.length === 0 && (
             <div className="glass rounded-2xl px-5 py-3">
               <div className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-primary/60 animate-[pulse-soft_1s_ease-in-out_infinite]" />
-                <span className="h-2 w-2 rounded-full bg-primary/60 animate-[pulse-soft_1s_ease-in-out_0.2s_infinite]" />
-                <span className="h-2 w-2 rounded-full bg-primary/60 animate-[pulse-soft_1s_ease-in-out_0.4s_infinite]" />
+                <span className="h-2 w-2 rounded-full bg-primary-glow animate-[pulse-soft_1s_ease-in-out_infinite]" />
+                <span className="h-2 w-2 rounded-full bg-primary-glow animate-[pulse-soft_1s_ease-in-out_0.2s_infinite]" />
+                <span className="h-2 w-2 rounded-full bg-primary-glow animate-[pulse-soft_1s_ease-in-out_0.4s_infinite]" />
               </div>
             </div>
           )}

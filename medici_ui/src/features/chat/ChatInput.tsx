@@ -61,13 +61,13 @@ export function ChatInput() {
           placeholder="Ask me anything… 💭"
           disabled={isProcessing}
           rows={1}
-          className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted/50 resize-none focus:outline-none min-h-[24px] max-h-[160px] leading-relaxed disabled:opacity-50"
+          className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none min-h-[24px] max-h-[160px] leading-relaxed disabled:opacity-50"
         />
 
         {isProcessing ? (
           <button
             onClick={cancelStream}
-            className="shrink-0 h-9 w-9 rounded-xl bg-error/20 hover:bg-error/30 border border-error/30 flex items-center justify-center text-error transition-all cursor-pointer"
+            className="shrink-0 h-9 w-9 rounded-xl bg-error-bg hover:bg-error-bg border border-error-border flex items-center justify-center text-error transition-all cursor-pointer"
             title="Stop generating"
           >
             <Square className="h-4 w-4" />
@@ -84,7 +84,7 @@ export function ChatInput() {
         )}
       </div>
 
-      <p className="text-[10px] text-text-muted/40 text-center mt-2">
+      <p className="text-[10px] text-text-muted text-center mt-2">
         Press Enter to send · Shift+Enter for new line
       </p>
     </div>

@@ -40,7 +40,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           className={clsx(
             'rounded-2xl px-5 py-3',
             isUser
-              ? 'bg-primary/15 border border-primary/20 text-text-primary'
+              ? 'bg-primary-glow border border-primary-light text-text-primary'
               : 'glass text-text-primary'
           )}
         >

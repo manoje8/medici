@@ -98,13 +98,13 @@ export function UploadPanel() {
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
-        className="border-2 border-dashed border-glass-border hover:border-primary/40 rounded-xl p-4 text-center cursor-pointer transition-colors duration-200 group"
+        className="border-2 border-dashed border-glass-border hover:border-primary-light rounded-xl p-4 text-center cursor-pointer transition-colors duration-200 group"
       >
         <FileUp className="h-6 w-6 mx-auto mb-2 text-text-muted group-hover:text-primary-light transition-colors" />
         <p className="text-xs text-text-muted">
           Drop file here or <span className="text-primary-light">browse</span>
         </p>
-        <p className="text-[10px] text-text-muted/60 mt-1">
+        <p className="text-[10px] text-text-muted mt-1">
           {ALLOWED_FILE_TYPES.join(', ')} • Max {MAX_FILE_SIZE_MB} MB
         </p>
       </div>
@@ -135,7 +135,7 @@ export function UploadPanel() {
             <select
               value={parseMethod}
               onChange={(e) => setParseMethod(e.target.value as ParseMethod)}
-              className="w-full bg-surface-800 border border-glass-border rounded-lg px-3 py-1.5 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary/50"
+              className="w-full bg-surface-800 border border-glass-border rounded-lg px-3 py-1.5 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary-light"
             >
               {Object.entries(PARSE_METHOD_LABELS).map(([value, label]) => (
                 <option key={value} value={value}>
@@ -183,7 +183,7 @@ export function UploadPanel() {
             {uploadedDocs.map((doc) => (
               <div
                 key={doc.docId}
-                className="flex items-center gap-2 text-xs text-text-secondary bg-surface-900/50 rounded-lg px-2.5 py-1.5"
+                className="flex items-center gap-2 text-xs text-text-secondary bg-surface-800 rounded-lg px-2.5 py-1.5"
               >
                 <span className="text-success text-[10px]">✓</span>
                 <span className="truncate flex-1">{doc.name}</span>
