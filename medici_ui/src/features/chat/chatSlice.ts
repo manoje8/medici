@@ -13,10 +13,20 @@ interface ChatState {
   isStreaming: boolean;
 }
 
+const getUserId = () => {
+  if (typeof window === 'undefined') return uuidv4();
+  let id = localStorage.getItem('medici_user_id');
+  if (!id) {
+    id = uuidv4();
+    localStorage.setItem('medici_user_id', id);
+  }
+  return id;
+};
+
 const initialState: ChatState = {
   messages: [],
   sessionId: uuidv4(),
-  userId: uuidv4(),
+  userId: getUserId(),
   isProcessing: false,
   pipelineStages: [],
   streamingTokens: '',
@@ -42,6 +52,14 @@ const chatSlice = createSlice({
     resetSession(state) {
       state.messages = [];
       state.sessionId = uuidv4();
+      state.pipelineStages = [];
+      state.streamingTokens = '';
+      state.isProcessing = false;
+      state.isStreaming = false;
+    },
+    loadSession(state, action: PayloadAction<{ sessionId: string; messages: Message[] }>) {
+      state.sessionId = action.payload.sessionId;
+      state.messages = action.payload.messages;
       state.pipelineStages = [];
       state.streamingTokens = '';
       state.isProcessing = false;
@@ -73,6 +91,7 @@ export const {
   updateLastAssistantMessage,
   clearMessages,
   resetSession,
+  loadSession,
   setProcessing,
   addPipelineStage,
   clearPipelineStages,

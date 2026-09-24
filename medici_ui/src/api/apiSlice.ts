@@ -1,10 +1,11 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 
-import type { AuthStatus, HealthStatus, LoginResponse } from '@/types';
+import type { AuthStatus, HealthStatus, LoginResponse, SessionSummary, SessionHistory } from '@/types';
 import { API_BASE_URL } from '@/utils/constants';
 
 export const apiSlice = createApi({
   reducerPath: 'api',
+  tagTypes: ['Sessions'],
   baseQuery: fetchBaseQuery({
     baseUrl: API_BASE_URL,
     prepareHeaders: (headers) => {
@@ -56,6 +57,23 @@ export const apiSlice = createApi({
         };
       },
     }),
+
+    listSessions: builder.query<{ sessions: SessionSummary[] }, { userId: string; limit?: number; offset?: number }>({
+      query: ({ userId, limit = 30, offset = 0 }) => `/sessions?user_id=${userId}&limit=${limit}&offset=${offset}`,
+      providesTags: ['Sessions'],
+    }),
+
+    getSessionHistory: builder.query<SessionHistory, string>({
+      query: (sessionId) => `/sessions/${sessionId}/history`,
+    }),
+
+    deleteSession: builder.mutation<{ deleted: boolean; session_id: string }, string>({
+      query: (sessionId) => ({
+        url: `/sessions/${sessionId}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: ['Sessions'],
+    }),
   }),
 });
 
@@ -64,4 +82,8 @@ export const {
   useAuthStatusQuery,
   useLoginMutation,
   useUploadDocumentMutation,
+  useListSessionsQuery,
+  useGetSessionHistoryQuery,
+  useLazyGetSessionHistoryQuery,
+  useDeleteSessionMutation,
 } = apiSlice;

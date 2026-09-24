@@ -11,11 +11,19 @@ _UNCACHEABLE_CATEGORIES = frozenset({"chitchat", "meta", "conversational", "summ
 
 
 class GraphPipeline:
-    def __init__(self, graph, short_term_memory, semantic_cache=None, llm_clients=None):
+    def __init__(
+        self,
+        graph,
+        short_term_memory,
+        semantic_cache=None,
+        llm_clients=None,
+        conversation_store=None,
+    ):
         self.graph = graph
         self.short_term = short_term_memory
         self._semantic_cache = semantic_cache
         self._llm_clients: list = llm_clients or []
+        self._conversation_store = conversation_store
 
     async def _init_session(
         self, session_id: str, user_id: str, user_message: str
@@ -24,6 +32,7 @@ class GraphPipeline:
         all LLM client usage counters.
 
         Returns ``(session, history)``."""
+        is_new = False
         if not session_id:
             logfire.info("Creating new session...")
             session_id = f"{user_id}_{uuid.uuid4()}"
@@ -31,6 +40,7 @@ class GraphPipeline:
         session: ConversationSession = await self.short_term.get_session(session_id)
         if not session:
             session = await self.short_term.create_session(user_id, session_id=session_id)
+            is_new = True
 
         history = session.to_history_dicts()
 
@@ -39,6 +49,21 @@ class GraphPipeline:
             role="user",
             content=user_message,
         )
+        if self._conversation_store is not None:
+            if is_new:
+                from medici.agents.memory.conversation_store import ConversationStore
+
+                title = ConversationStore._generate_title(user_message)
+                await self._conversation_store.save_session(
+                    session_id=session.session_id,
+                    user_id=user_id,
+                    title=title,
+                )
+            await self._conversation_store.save_turn(
+                session_id=session.session_id,
+                role="user",
+                content=user_message,
+            )
 
         for client in self._llm_clients:
             client.reset_usage()
@@ -188,6 +213,13 @@ class GraphPipeline:
                 content=answer,
                 metadata={"sources": sources},
             )
+            if self._conversation_store is not None:
+                await self._conversation_store.save_turn(
+                    session_id=session.session_id,
+                    role="assistant",
+                    content=answer,
+                    metadata={"sources": sources},
+                )
 
     async def chat(self, user_message: str, session_id: str, user_id: str) -> dict:
 

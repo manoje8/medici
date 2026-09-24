@@ -87,3 +87,21 @@ export interface QueryResponse {
   cache_similarity?: number;
   token_usage: Record<string, unknown>;
 }
+
+export interface SessionSummary {
+  session_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  preview?: string;
+}
+
+export interface SessionHistory {
+  session_id: string;
+  turns: Array<{
+    role: string;
+    content: string;
+    created_at: string;
+    metadata: Record<string, unknown>;
+  }>;
+}

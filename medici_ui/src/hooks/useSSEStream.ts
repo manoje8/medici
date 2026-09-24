@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 
+import { apiSlice } from '@/api/apiSlice';
 import {
   addMessage,
   addPipelineStage,
@@ -143,6 +144,7 @@ export function useSSEStream() {
                 dispatch(setStreaming(false));
                 dispatch(setProcessing(false));
                 dispatch(clearStreamingTokens());
+                dispatch(apiSlice.util.invalidateTags(['Sessions']));
                 return;
               }
 

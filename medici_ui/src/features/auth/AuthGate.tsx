@@ -43,7 +43,6 @@ export function AuthGate({ children }: AuthGateProps) {
         })
       );
     } else if (data.auth_configured) {
-      // Check if we have a stored token
       const storedToken = localStorage.getItem('medici_token');
       if (storedToken) {
         dispatch(
@@ -63,10 +62,7 @@ export function AuthGate({ children }: AuthGateProps) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface-900">
         <div className="flex flex-col items-center gap-4 animate-[fade-in_0.3s_ease-out]">
-          <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-glow-strong">
-            <span className="text-2xl">🤖</span>
-          </div>
-          <Spinner size="lg" />
+          <Spinner size="md" />
           <p className="text-sm text-text-muted">Connecting to Medici…</p>
         </div>
       </div>

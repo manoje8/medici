@@ -23,6 +23,7 @@ from medici.agents.agentic.router import RouterAgent
 from medici.agents.agentic.synthesizer import SynthesizerAgent
 from medici.agents.graph.graph import compile_graph_with_postgres
 from medici.agents.graph.runner import GraphPipeline
+from medici.agents.memory.conversation_store import ConversationStore
 from medici.agents.memory.short_term import ShortTermMemoryManager
 from medici.agents.retrieval import RetrievalAgent
 from medici.api.auth import auth_handler
@@ -30,6 +31,7 @@ from medici.api.config_api import config_api as _config_api
 from medici.api.rate_limiter import AsyncRateLimiterBackend, RateLimiter
 from medici.api.routers.document_routes import create_document_routes
 from medici.api.routers.query_router import create_query_routes
+from medici.api.routers.session_routes import create_session_routes
 from medici.common.cache.embedding_cache import EmbeddingCache
 from medici.common.cache.semantic_cache import SemanticQueryCache
 from medici.common.llm.fallback import FallbackClient
@@ -75,6 +77,9 @@ async def lifespan(app: FastAPI):
         short_term = ShortTermMemoryManager(config.REDIS_URL)
         if hasattr(short_term, "aclose"):
             closers.append(("redis", short_term.aclose))
+
+        conversation_store = ConversationStore(pool)
+        await conversation_store.setup()
 
         emb_cache: EmbeddingCache | None = None
         if config.EMBEDDING_CACHE_ENABLED:
@@ -152,11 +157,13 @@ async def lifespan(app: FastAPI):
             short_term_memory=short_term,
             semantic_cache=semantic_cache,
             llm_clients=[gemini_client, groq_client],
+            conversation_store=conversation_store,
         )
         app.state.pipeline = pipeline
         app.state.pool = pool
         app.state.qdrant = storage_service
         app.state.processor = processor
+        app.state.conversation_store = conversation_store
 
         app.state.rate_limiter = None
         if _config_api.RATE_LIMIT_ENABLED:
@@ -256,6 +263,7 @@ def create_apps():
             query_limiter=_query_limiter,
         )
     )
+    app.include_router(create_session_routes())
 
     @app.get("/auth-status")
     async def get_auth_status():

@@ -3,7 +3,7 @@ import { FileText, MessageCircle, Search } from 'lucide-react';
 export function WelcomeMessage() {
   return (
     <div className="flex items-center justify-center min-h-[60vh] px-4">
-      <div className="max-w-lg text-center animate-[bounce-in_0.4s_cubic-bezier(0.34,1.56,0.64,1)]">
+      <div className="max-w-2xl text-center animate-[bounce-in_0.4s_cubic-bezier(0.34,1.56,0.64,1)]">
 
         <h2 className="text-2xl font-bold text-text-primary mb-2">
           Welcome to <span className="bg-gradient-to-r from-primary-light to-accent bg-clip-text text-transparent">Medici</span>
@@ -12,7 +12,7 @@ export function WelcomeMessage() {
           Your Intelligent Document Analysis Assistant
         </p>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <FeatureCard
             icon={<FileText className="h-5 w-5" />}
             title="Document Analysis"
@@ -28,11 +28,11 @@ export function WelcomeMessage() {
             title="Context-Aware"
             description="I remember our conversation"
           />
-        </div>
+        </div> */}
 
-        <p className="text-xs text-text-muted mt-8">
+        {/* <p className="text-xs text-text-muted mt-8">
           Start by uploading a document or asking me a question!
-        </p>
+        </p> */}
       </div>
     </div>
   );
